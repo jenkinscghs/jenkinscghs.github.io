@@ -8,3 +8,4 @@
 #area-overlays .area-overlay.hovered {
   border-color: #13fc03; border-width: 4px; /* Example hover color */
 }
+img {width: 100%;}
