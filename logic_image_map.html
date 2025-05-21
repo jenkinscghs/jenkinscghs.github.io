@@ -1,5 +1,60 @@
-<html>
-  <body>
-    some text
-  </body>
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+    <!-- <meta name="viewport" content="width=device-width, initial-scale=1.0"> --->
+    <title>Logic Image Map</title>
+    <link rel="stylesheet" href="style.css">
+    </head>
+    
+<body>
+<!---import some areas from image map 1.0, fix color of border to gold, can I figure out how to add layers/sub areas?--->
+<div style="position: relative; display: inline-block;">
+  <img src="https://cdn.glitch.global/4577cbcb-3ce8-413f-8d33-62443fa515a2/logic_map?v=1747663389625" alt="Image with areas" usemap="#image-map" style="display: block;">
+  <map name="image-map" id="image-map">
+<!-------areas here ---->
+    <!----Regions, playhead------>
+     <area shape="rect" coords="776,122,803,500" href="#" alt="Playhead" data-area-id="area-25"data-tooltip="Playhead, indicates playback position."> 
+    <area shape="rect" coords="410,145,793,210" href="#" alt="software region" data-area-id="area-1"data-tooltip="Green regions are software instruments">
+    <area shape="rect" coords="410,211,793,273" href="#" alt="step sequencer" data-area-id="area-2"data-tooltip="Purple regions are step sequencer (drum machine) tracks.">
+    <area shape="rect" coords="410,279,793,335" href="#" alt="muted" data-area-id="area-3"data-tooltip="A grayed out region is muted.">
+   <area shape="rect" coords="411,337,790,360" href="#" alt="highlight" data-area-id="area-4"data-tooltip="White highlight accross the top indicates region is selected."> 
+   <area shape="rect" coords="411,359,790,405" href="#" alt="audio" data-area-id="area-5"data-tooltip="Blue regions are audio.">
+    <!-------control bar------->
+      <!---top layer should be "on top" in code-->
+     <area shape="rect" coords="710,12,740,36" href="#" alt="BPM" data-area-id="area-7"data-tooltip="Tempo in Beats Per Minute BPM">
+    <area shape="rect" coords="590,17,678,46" href="#" alt="position" data-area-id="area-8"data-tooltip="Indicates playhead position">
+    <area shape="rect" coords="776,12,806,35" href="#" alt="time signature" data-area-id="area-9"data-tooltip="Time Signature">
+    <area shape="rect" coords="565,7,845,65" href="#" alt="transport" data-area-id="area-6"data-tooltip="Control bar">
+   <!------main top controls, left to right--->
+     <area shape="rect" coords="46,17,79,50" href="#" alt="inspector pane" data-area-id="area-10"data-tooltip="Show/Hide inspector pane.">
+    <area shape="rect" coords="236,17,269,50" href="#" alt="track editor" data-area-id="area-11"data-tooltip="Show/Hide track editor.">
+   <area shape="rect" coords="305,19,346,52" href="#" alt="rewind" data-area-id="area-12"data-tooltip="Transport back">   <area shape="rect" coords="347,19,382,52" href="#" alt="ffwd" data-area-id="area-13"data-tooltip="Transport forward."> 
+   <area shape="rect" coords="383,19,420,52" href="#" alt="jump back" data-area-id="area-14"data-tooltip="Back to start"> 
+    <area shape="rect" coords="420,19,455,52" href="#" alt="play/pause" data-area-id="area-15"data-tooltip="Play/Pause (spacebar)"> 
+    <area shape="rect" coords="456,19,490,52" href="#" alt="Record" data-area-id="area-16"data-tooltip="Record"> 
+    <area shape="rect" coords="524,19,562,52" href="#" alt="loop" data-area-id="area-17"data-tooltip="Loop Playback On/Off"> 
+    <area shape="rect" coords="974,18,1007,50" href="#" alt="count-in" data-area-id="area-18"data-tooltip="Count-in On/Off"> 
+    <area shape="rect" coords="1008,18,1043,50" href="#" alt="metronome" data-area-id="area-19"data-tooltip="Metronome AKA click track, On/Off"> 
+    <area shape="rect" coords="1205,16,1234,50" href="#" alt="loops" data-area-id="area-20"data-tooltip="Show/Hide Loop Browser">
+    <area shape="rect" coords="1235,16,1270,50" href="#" alt="media" data-area-id="area-21"data-tooltip="Show/Hide Media Browser (files)">
+  <!---inspector pane, track editor, loop bar,---> 
+   <area shape="rect" coords="0,68,180,800" href="#" alt="inspector pane" data-area-id="area-22"data-tooltip="Inspector pane. Selected track is left column."> 
+    <area shape="rect" coords="180,510,1280,800" href="#" alt="track editor" data-area-id="area-23"data-tooltip="Track editor shows selected track in detail."> 
+    <area shape="rect" coords="410,105,795,127" href="#" alt="Loop Bar" data-area-id="area-24"data-tooltip="Shows the range of playback loop."> 
+  <!--25 is the last added area number (playhead)-->  
+    
+    
+  </map>
+  <!------end areas----------->
+  <div id="area-overlays" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none;">
+    <div id="custom-imagemap-tooltip" style="position: absolute; background-color: rgba(0, 0, 0, 0.8); color: white; padding: 5px; border-radius: 3px; font-size: 14px; opacity: 0; visibility: hidden; z-index: 10;"></div>
+    </div>
+</div>
+<br><div>
+    <!---
+<a href="https://programminghead.com/Projects/find-coordinates-of-image-online.html"> Use this tool to find image coordinates.</a></div>
+    -->
+<script src="script.js"></script>
+</body>
 </html>
