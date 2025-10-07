@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orchestra Seating Chart Designer</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        :root { font-family: 'Inter', sans-serif; }
+        .card {
+            cursor: grab;
+            transition: transform 0.1s;
+            touch-action: none; /* Prevents default touch scrolling when dragging */
+        }
+        .card:active { cursor: grabbing; z-index: 100; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 0, 0, 0.05); }
+        #stage {
+            min-height: 60vh;
+            background-image: linear-gradient(135deg, #f0f9ff 0%, #dbeafe 100%);
+            border: 4px solid #3b82f6;
+            position: relative;
+            overflow: hidden;
+        }
+        #unseated-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border-bottom-left-radius: 0.5rem;
+            border-bottom-right-radius: 0.5rem;
+        }
+        /* Custom scrollbar for aesthetics */
+        #unseated-list::-webkit-scrollbar { width: 6px; }
+        #unseated-list::-webkit-scrollbar-thumb { background-color: #9ca3af; border-radius: 3px; }
+        #unseated-list::-webkit-scrollbar-thumb:hover { background-color: #6b7280; }
+    </style>
+</head>
+<body class="bg-gray-50 p-4 md:p-8">
+
+    <div id="app-container" class="max-w-7xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-extrabold text-indigo-700">Orchestra Seating Designer</h1>
+            <p class="text-gray-500 mt-2">Paste names, drag cards onto the stage, and the layout saves automatically.</p>
+        </header>
+
+        <!-- Loading/Message Area -->
+        <div id="status-message" class="text-center p-3 mb-4 rounded-lg text-sm font-medium bg-yellow-100 text-yellow-800 hidden">
+            Initializing application...
+        </div>
+
+        <!-- Input and Control Area -->
+        <div class="bg-white p-6 rounded-xl shadow-lg mb-6 border border-gray-200">
+            <h2 class="text-2xl font-semibold text-gray-800 mb-3">1. Add Musicians</h2>
+            <div class="flex flex-col md:flex-row gap-4">
+                <textarea id="name-input" placeholder="Paste names from a spreadsheet (one name per line)" rows="4" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"></textarea>
+                <div class="flex flex-col space-y-2">
+                    <button id="add-names-btn" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-lg hover:bg-indigo-700 transition duration-150 shadow-md">
+                        Add Names
+                    </button>
+                    <button id="clear-stage-btn" class="px-6 py-3 bg-red-500 text-white font-bold rounded-lg hover:bg-red-600 transition duration-150 shadow-md">
+                        Clear Seating
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Seating Layout -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Unseated Musicians List (Left Column) -->
+            <div class="lg:col-span-1 bg-white rounded-xl shadow-lg border border-gray-200">
+                <div class="p-4 border-b bg-gray-50 rounded-t-xl">
+                    <h2 class="text-xl font-semibold text-gray-800">2. Unseated Musicians (<span id="unseated-count">0</span>)</h2>
+                    <p class="text-sm text-gray-500">Drag these cards onto the stage.</p>
+                </div>
+                <div id="unseated-list" class="p-4 flex flex-wrap gap-2">
+                    <!-- Cards will be rendered here -->
+                </div>
+            </div>
+
+            <!-- Stage Area (Right/Main Column) -->
+            <div class="lg:col-span-2">
+                <div class="p-4 bg-indigo-500 rounded-t-xl text-white shadow-xl">
+                    <h2 class="text-xl font-bold">3. The Orchestra Stage</h2>
+                    <p class="text-sm">Seated Musicians (<span id="seated-count">0</span>)</p>
+                </div>
+                <div id="stage" class="rounded-b-xl shadow-2xl" ondrop="drop(event)" ondragover="allowDrop(event)">
+                    <!-- Seating chart visualization goes here -->
+                    <div class="absolute inset-0 flex items-center justify-center text-gray-400 text-3xl font-light pointer-events-none">
+                        Drop Name Cards Here
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script type="module">
+        // Data persistence key for local storage
+        const STORAGE_KEY = 'ORCHESTRA_SEATING_CHART_DATA'; 
+        
+        const statusMessage = document.getElementById('status-message');
+        const unseatedList = document.getElementById('unseated-list');
+        const stage = document.getElementById('stage');
+        const unseatedCountSpan = document.getElementById('unseated-count');
+        const seatedCountSpan = document.getElementById('seated-count');
+
+        // State management
+        let musicians = []; // Array of { id, name, x, y }
+
+        // --- Utility Functions ---
+
+        /** Generates a simple, cross-browser unique ID. */
+        function generateUniqueId() {
+            // Uses a combination of timestamp and a small random number
+            return Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
+        }
+
+        function showStatus(message, type = 'info') {
+            let bgColor = 'bg-yellow-100 text-yellow-800';
+            if (type === 'success') bgColor = 'bg-green-100 text-green-800';
+            if (type === 'error') bgColor = 'bg-red-100 text-red-800';
+            statusMessage.className = `text-center p-3 mb-4 rounded-lg text-sm font-medium ${bgColor}`;
+            statusMessage.textContent = message;
+            statusMessage.style.display = 'block';
+        }
+
+        // --- Data Persistence (LocalStorage) ---
+        
+        // Loads data from local storage on startup
+        async function initApp() {
+            showStatus("Initializing application...");
+            try {
+                const storedData = localStorage.getItem(STORAGE_KEY);
+                if (storedData) {
+                    musicians = JSON.parse(storedData);
+                    showStatus("Data loaded from local storage.", 'success');
+                } else {
+                    musicians = [];
+                    showStatus("No previous data found. Start by adding names.", 'info');
+                }
+                renderMusicians();
+            } catch (error) {
+                console.error("Error loading from local storage:", error);
+                showStatus("Error loading data from local storage. Starting fresh.", 'error');
+                musicians = [];
+                renderMusicians();
+            }
+        }
+
+        // Saves the current state of musicians to local storage
+        async function saveMusicians() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(musicians));
+                console.log("Musicians saved to local storage.");
+            } catch (error) {
+                console.error("Error saving to local storage:", error);
+                showStatus("Error saving data. Local storage may be full or disabled.", 'error');
+            }
+        }
+
+        // --- Rendering ---
+
+        function createCardElement(musician) {
+            const card = document.createElement('div');
+            card.id = `musician-${musician.id}`;
+            card.className = `card px-3 py-1 bg-white rounded-lg shadow-md text-sm font-medium text-gray-700 transition duration-150 whitespace-nowrap overflow-hidden text-ellipsis border-2 border-indigo-400 hover:bg-indigo-50`;
+            card.textContent = musician.name;
+            card.draggable = true;
+            card.setAttribute('data-id', musician.id);
+
+            card.ondragstart = (event) => {
+                event.dataTransfer.setData("text/plain", musician.id);
+                // Set the drag image to the card itself
+                event.dataTransfer.setDragImage(card, card.offsetWidth / 2, card.offsetHeight / 2);
+            };
+
+            // If the musician is seated, apply position styles
+            if (musician.x !== undefined && musician.y !== undefined) {
+                card.style.position = 'absolute';
+                card.style.left = `${musician.x}px`;
+                card.style.top = `${musician.y}px`;
+                card.className += ' bg-yellow-100 border-yellow-500 shadow-xl'; // Different color for seated cards
+            }
+
+            // Simple touch drag handling for mobile
+            let initialX, initialY, dragStartX, dragStartY;
+            let isDragging = false;
+            let currentCard = null;
+
+            function handleTouchStart(e) {
+                currentCard = e.currentTarget;
+                const touch = e.touches[0];
+                const rect = currentCard.getBoundingClientRect();
+
+                // Calculate the offset from the top-left of the card to the touch point
+                initialX = touch.clientX - rect.left;
+                initialY = touch.clientY - rect.top;
+
+                // Ensure the card is absolutely positioned and on top
+                currentCard.style.position = 'absolute';
+                currentCard.style.zIndex = '1000';
+                currentCard.classList.add('bg-yellow-200'); // Visual cue for dragging
+                isDragging = false;
+                dragStartX = touch.clientX;
+                dragStartY = touch.clientY;
+                e.preventDefault(); // Prevent scrolling on card touch
+            }
+
+            function handleTouchMove(e) {
+                if (!currentCard) return;
+
+                const touch = e.touches[0];
+                const dx = Math.abs(touch.clientX - dragStartX);
+                const dy = Math.abs(touch.clientY - dragStartY);
+
+                // Start dragging only after a small threshold
+                if ((dx > 5 || dy > 5) && !isDragging) {
+                    isDragging = true;
+                }
+
+                if (isDragging) {
+                    let newX = touch.clientX - initialX - stage.getBoundingClientRect().left;
+                    let newY = touch.clientY - initialY - stage.getBoundingClientRect().top;
+
+                    // Constrain movement within the stage bounds
+                    newX = Math.max(0, Math.min(newX, stage.offsetWidth - currentCard.offsetWidth));
+                    // FIX: Removed the extra closing parenthesis here
+                    newY = Math.min(newY, stage.offsetHeight - currentCard.offsetHeight); 
+
+                    currentCard.style.left = `${newX}px`;
+                    currentCard.style.top = `${newY}px`;
+                    e.preventDefault();
+                }
+            }
+
+            async function handleTouchEnd(e) {
+                if (!currentCard) return;
+
+                if (isDragging) {
+                    const rect = stage.getBoundingClientRect();
+                    const cardRect = currentCard.getBoundingClientRect();
+
+                    // Check if the card is released over the stage
+                    if (cardRect.left >= rect.left && cardRect.right <= rect.right &&
+                        cardRect.top >= rect.top && cardRect.bottom <= rect.bottom) {
+
+                        // Calculate final relative position within the stage
+                        const finalX = cardRect.left - rect.left;
+                        const finalY = cardRect.top - rect.top;
+
+                        // Update musician data and save
+                        updateMusicianPosition(musician.id, finalX, finalY);
+
+                    } else {
+                        // Dropped outside the stage (or moved from stage to list)
+                        if (currentCard.parentElement === stage) {
+                             updateMusicianPosition(musician.id, null, null); // Unseat the musician
+                        }
+                    }
+                }
+
+                // Cleanup
+                currentCard.style.zIndex = '';
+                currentCard.classList.remove('bg-yellow-200');
+                currentCard = null;
+                isDragging = false;
+            }
+
+            card.addEventListener('touchstart', handleTouchStart);
+            card.addEventListener('touchmove', handleTouchMove);
+            card.addEventListener('touchend', handleTouchEnd);
+            card.addEventListener('touchcancel', handleTouchEnd);
+
+            return card;
+        }
+
+        function renderMusicians() {
+            unseatedList.innerHTML = '';
+            stage.innerHTML = ''; // Clear stage
+
+            let unseatedCount = 0;
+            let seatedCount = 0;
+
+            musicians.forEach(musician => {
+                const card = createCardElement(musician);
+
+                if (musician.x !== undefined && musician.y !== undefined) {
+                    stage.appendChild(card);
+                    seatedCount++;
+                } else {
+                    unseatedList.appendChild(card);
+                    unseatedCount++;
+                }
+            });
+
+            unseatedCountSpan.textContent = unseatedCount;
+            seatedCountSpan.textContent = seatedCount;
+        }
+
+        // --- Drag and Drop Handlers (Desktop) ---
+
+        window.allowDrop = function(event) {
+            event.preventDefault(); // Allows drop
+        };
+
+        window.drop = async function(event) {
+            event.preventDefault();
+            const musicianId = event.dataTransfer.getData("text/plain");
+
+            // Calculate card position relative to the stage container
+            const stageRect = stage.getBoundingClientRect();
+            const cardElement = document.getElementById(`musician-${musicianId}`);
+            let offsetX = 0;
+            let offsetY = 0;
+
+            if (cardElement) {
+                // If dragging an existing card, use its relative position from drag start
+                offsetX = cardElement.offsetWidth / 2; // Center the card roughly
+                offsetY = cardElement.offsetHeight / 2;
+            }
+
+            // Calculate the final position on the stage
+            let x = event.clientX - stageRect.left - offsetX;
+            let y = event.clientY - stageRect.top - offsetY;
+
+            // Ensure the position is non-negative
+            x = Math.max(0, x);
+            y = Math.max(0, y);
+
+            // Bounds check for the right/bottom edge (optional but good practice)
+            const cardWidth = cardElement ? cardElement.offsetWidth : 100; // Assume a width if missing
+            const cardHeight = cardElement ? cardElement.offsetHeight : 30; // Assume a height if missing
+
+            x = Math.min(x, stage.offsetWidth - cardWidth);
+            y = Math.min(y, stage.offsetHeight - cardHeight);
+
+            await updateMusicianPosition(musicianId, x, y);
+        };
+
+        // --- Data Manipulation ---
+
+        async function updateMusicianPosition(id, x, y) {
+            const index = musicians.findIndex(m => m.id === id);
+            if (index !== -1) {
+                if (x === null && y === null) {
+                    // Unseat
+                    delete musicians[index].x;
+                    delete musicians[index].y;
+                } else {
+                    // Seat
+                    musicians[index].x = Math.round(x);
+                    musicians[index].y = Math.round(y);
+                }
+                await saveMusicians();
+                renderMusicians(); // Re-render immediately since there is no Firebase listener
+            }
+        }
+
+        // --- Event Listeners ---
+
+        document.getElementById('add-names-btn').addEventListener('click', async () => {
+            const input = document.getElementById('name-input').value.trim();
+            if (!input) {
+                showStatus("Please paste names into the box first.", 'info');
+                return;
+            }
+
+            const newNames = input.split('\n')
+                .map(line => line.trim())
+                .filter(name => name.length > 0)
+                .map(name => ({
+                    id: generateUniqueId(), // Using the cross-compatible function
+                    name: name
+                    // x, y are intentionally missing, meaning they are unseated
+                }));
+
+            if (newNames.length > 0) {
+                musicians = [...musicians, ...newNames];
+                document.getElementById('name-input').value = ''; // Clear input
+                await saveMusicians();
+                renderMusicians();
+                showStatus(`Added ${newNames.length} new musicians.`, 'success');
+            }
+        });
+
+        document.getElementById('clear-stage-btn').addEventListener('click', async () => {
+             // Create a custom confirmation modal/box instead of alert/confirm
+            const confirmClear = (message) => {
+                const modal = document.createElement('div');
+                modal.className = "fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50";
+                modal.innerHTML = `
+                    <div class="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
+                        <p class="text-lg font-semibold mb-4">${message}</p>
+                        <div class="flex justify-end space-x-3">
+                            <button id="modal-cancel" class="px-4 py-2 bg-gray-300 text-gray-800 rounded hover:bg-gray-400">Cancel</button>
+                            <button id="modal-confirm" class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Confirm Clear</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+
+                return new Promise(resolve => {
+                    document.getElementById('modal-confirm').onclick = () => {
+                        document.body.removeChild(modal);
+                        resolve(true);
+                    };
+                    document.getElementById('modal-cancel').onclick = () => {
+                        document.body.removeChild(modal);
+                        resolve(false);
+                    };
+                });
+            };
+
+
+            const confirmed = await confirmClear("Are you sure you want to clear the entire seating chart? All positions will be reset.");
+
+            if (confirmed) {
+                // Keep the names, but remove their positions (unseat everyone)
+                musicians = musicians.map(m => {
+                    const { x, y, ...rest } = m;
+                    return rest;
+                });
+                await saveMusicians();
+                renderMusicians();
+                showStatus("Seating chart cleared. All musicians are now unseated.", 'success');
+            }
+        });
+
+        // Initialize the application
+        initApp();
+    </script>
+</body>
+</html>
