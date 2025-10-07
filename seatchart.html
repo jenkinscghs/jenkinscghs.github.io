@@ -95,25 +95,10 @@
         </div>
     </div>
 
-    <!-- Firebase Imports -->
     <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, getDoc, getDocs, query, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-        let app;
-        let db;
-        let auth;
-        let userId = null;
-        let isAuthReady = false;
-
-        const MUSICIANS_COLLECTION = 'seating_charts';
-        const CHART_DOC_ID = 'main_chart';
+        // Data persistence key for local storage
+        const STORAGE_KEY = 'ORCHESTRA_SEATING_CHART_DATA'; 
+        
         const statusMessage = document.getElementById('status-message');
         const unseatedList = document.getElementById('unseated-list');
         const stage = document.getElementById('stage');
@@ -134,106 +119,38 @@
             statusMessage.style.display = 'block';
         }
 
-        function getMusiciansDocRef() {
-            if (!db || !userId) {
-                console.error("Firestore or User ID not initialized.");
-                return null;
-            }
-            // Private data storage path: /artifacts/{appId}/users/{userId}/seating_charts/main_chart
-            return doc(db, 'artifacts', appId, 'users', userId, MUSICIANS_COLLECTION, CHART_DOC_ID);
-        }
-
-        // --- Firebase Initialization and Auth ---
-
-        async function initFirebase() {
+        // --- Data Persistence (LocalStorage) ---
+        
+        // Loads data from local storage on startup
+        async function initApp() {
+            showStatus("Initializing application...");
             try {
-                if (Object.keys(firebaseConfig).length === 0) {
-                    showStatus("Firebase configuration missing. Data persistence will not work.", 'error');
-                    // Fallback: If config is missing, just use local state without persistence
-                    isAuthReady = true;
-                    userId = crypto.randomUUID(); // Mock ID
-                    return;
-                }
-
-                showStatus("Connecting to Firebase...");
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
+                const storedData = localStorage.getItem(STORAGE_KEY);
+                if (storedData) {
+                    musicians = JSON.parse(storedData);
+                    showStatus("Data loaded from local storage.", 'success');
                 } else {
-                    await signInAnonymously(auth);
-                }
-
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        isAuthReady = true;
-                        showStatus(`Welcome! User ID: ${userId.substring(0, 8)}... Data loaded automatically.`, 'success');
-                        setupRealtimeListener();
-                    } else {
-                        userId = null;
-                        isAuthReady = true;
-                        showStatus("Authentication failed. Reloading page may help.", 'error');
-                    }
-                });
-
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                showStatus(`Failed to initialize Firebase: ${error.message}`, 'error');
-            }
-        }
-
-        // --- Data Persistence (Firestore) ---
-
-        async function saveMusicians() {
-            if (!isAuthReady || !userId || !db) {
-                console.warn("Cannot save: Auth not ready or DB not initialized.");
-                return;
-            }
-
-            const docRef = getMusiciansDocRef();
-            if (!docRef) return;
-
-            try {
-                // We use setDoc to completely replace the document content.
-                await setDoc(docRef, { musicians: musicians });
-                console.log("Musicians saved successfully.");
-            } catch (error) {
-                console.error("Error saving musicians:", error);
-                showStatus("Error saving data. Check console for details.", 'error');
-            }
-        }
-
-        function setupRealtimeListener() {
-            if (!isAuthReady || !userId || !db) {
-                console.warn("Cannot start listener: Auth not ready or DB not initialized.");
-                return;
-            }
-
-            const docRef = getMusiciansDocRef();
-            if (!docRef) return;
-
-            // Listen for real-time updates
-            onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data && Array.isArray(data.musicians)) {
-                        musicians = data.musicians;
-                        renderMusicians();
-                        showStatus("Seating chart updated from database.", 'success');
-                    }
-                } else {
-                    // Document doesn't exist, initialize with an empty array and save
-                    console.log("No existing data found. Initializing chart.");
                     musicians = [];
-                    saveMusicians();
+                    showStatus("No previous data found. Start by adding names.", 'info');
                 }
-            }, (error) => {
-                console.error("Error listening to database:", error);
-                showStatus("Error loading real-time updates.", 'error');
-            });
+                renderMusicians();
+            } catch (error) {
+                console.error("Error loading from local storage:", error);
+                showStatus("Error loading data from local storage. Starting fresh.", 'error');
+                musicians = [];
+                renderMusicians();
+            }
+        }
+
+        // Saves the current state of musicians to local storage
+        async function saveMusicians() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(musicians));
+                console.log("Musicians saved to local storage.");
+            } catch (error) {
+                console.error("Error saving to local storage:", error);
+                showStatus("Error saving data. Local storage may be full or disabled.", 'error');
+            }
         }
 
         // --- Rendering ---
@@ -302,7 +219,7 @@
 
                     // Constrain movement within the stage bounds
                     newX = Math.max(0, Math.min(newX, stage.offsetWidth - currentCard.offsetWidth));
-                    newY = Math.max(0, Math.min(newY, stage.offsetHeight - currentCard.offsetHeight));
+                    newY = Math.min(newY, stage.offsetHeight - currentCard.offsetHeight));
 
                     currentCard.style.left = `${newX}px`;
                     currentCard.style.top = `${newY}px`;
@@ -429,7 +346,7 @@
                     musicians[index].y = Math.round(y);
                 }
                 await saveMusicians();
-                // The onSnapshot listener will handle the re-render.
+                renderMusicians(); // Re-render immediately since there is no Firebase listener
             }
         }
 
@@ -455,6 +372,7 @@
                 musicians = [...musicians, ...newNames];
                 document.getElementById('name-input').value = ''; // Clear input
                 await saveMusicians();
+                renderMusicians();
                 showStatus(`Added ${newNames.length} new musicians.`, 'success');
             }
         });
@@ -497,12 +415,13 @@
                     return rest;
                 });
                 await saveMusicians();
+                renderMusicians();
                 showStatus("Seating chart cleared. All musicians are now unseated.", 'success');
             }
         });
 
         // Initialize the application
-        initFirebase();
+        initApp();
     </script>
 </body>
 </html>
