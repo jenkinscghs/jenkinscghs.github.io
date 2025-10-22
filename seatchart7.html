@@ -6,8 +6,11 @@
     <title>Ensemble Seating Chart Designer</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load html2canvas for image generation (New addition) -->
+    <!-- Load html2canvas for capturing HTML as an image -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- Load jsPDF for creating and exporting the PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
     <!-- Load Inter font -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
@@ -18,14 +21,30 @@
             touch-action: none; /* Prevents default touch scrolling when dragging */
         }
         .card:active { cursor: grabbing; z-index: 100; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2), 0 4px 6px -2px rgba(0, 4px, 0, 0.05); }
+        
+        /* 1. ASPECT RATIO WRAPPER: Use the padding hack to enforce 1.29:1 ratio (width/height) */
+        #stage-wrapper {
+            /* Height = 1 / 1.29 = 0.775 (77.5%) of the width */
+            padding-top: 77.5%; 
+            position: relative; /* Essential for containing the absolute stage */
+            width: 100%; /* Ensure it takes full column width */
+        }
+        
+        /* 2. STAGE ELEMENT: Absolutely positioned to fill the padded wrapper */
         #stage {
-            min-height: 60vh;
-            /* Changed to pure white background and black border */
+            /* Fills the space created by padding-top */
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            
+            /* Stage styling */
             background-color: white; 
             border: 4px solid black; 
-            position: relative;
             overflow: hidden;
         }
+
         #unseated-list {
             max-height: 400px;
             overflow-y: auto;
@@ -52,10 +71,12 @@
             Initializing application...
         </div>
 
-        <!-- Class Management Section with Rename/Delete buttons -->
+        <!-- Class Management Section with Rename/Delete/Import/Export buttons -->
         <div class="bg-white p-6 rounded-xl shadow-lg mb-6 border border-gray-200">
             <h2 class="text-2xl font-semibold text-gray-800 mb-3">Ensembles & Classes</h2>
             <div class="flex flex-col gap-3">
+                
+                <!-- Row 1: Selector and Add Button -->
                 <div class="flex flex-col sm:flex-row gap-3 items-center">
                     <select id="class-selector" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-gray-500 focus:border-gray-500 text-lg font-medium">
                         <!-- Options populated by JavaScript -->
@@ -65,16 +86,29 @@
                         + Add New Group
                     </button>
                 </div>
-                <div class="flex gap-3 mt-1">
-                    <!-- SECONDARY BUTTON: Light Gray background, Dark text -->
-                    <button id="rename-class-btn" class="flex-1 px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm disabled:opacity-50 border border-gray-400" disabled>
+
+                <!-- Row 2: Combined Class Management Controls (Rename, Delete, Import, Export) -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                    <!-- 1. Rename -->
+                    <button id="rename-class-btn" class="px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm disabled:opacity-50 border border-gray-400" disabled>
                         Rename
                     </button>
-                    <!-- DESTRUCTIVE BUTTON: Outlined black/white -->
-                    <button id="delete-class-btn" class="flex-1 px-4 py-2 border border-gray-900 text-gray-900 font-medium rounded-lg hover:bg-gray-100 transition duration-150 shadow-sm disabled:opacity-50" disabled>
+                    <!-- 2. Delete (Destructive Style) -->
+                    <button id="delete-class-btn" class="px-4 py-2 border border-gray-900 text-gray-900 font-medium rounded-lg hover:bg-gray-100 transition duration-150 shadow-sm disabled:opacity-50" disabled>
                         Delete
                     </button>
+                    <!-- 3. Import JSON (Using a Label + Hidden Input) -->
+                    <label for="import-file-input" id="import-class-label" class="flex items-center justify-center px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm border border-gray-400 cursor-pointer text-center disabled:opacity-50">
+                        Import Group (JSON File)
+                    </label>
+                    <input type="file" id="import-file-input" accept=".json" class="hidden">
+                    
+                    <!-- 4. Download JSON Data -->
+                    <button id="export-class-btn" class="px-4 py-2 bg-gray-200 text-gray-800 font-medium rounded-lg hover:bg-gray-300 transition duration-150 shadow-sm border border-gray-400" disabled>
+                        Export Group (JSON File)
+                    </button>
                 </div>
+
             </div>
             <p id="current-class-info" class="text-lg font-semibold text-gray-600 mt-4">Current Class: Loading...</p>
         </div>
@@ -82,30 +116,30 @@
 
         <!-- Input and Control Area -->
         <div class="bg-white p-6 rounded-xl shadow-lg mb-6 border border-gray-200">
-            <h2 class="text-2xl font-semibold text-gray-800 mb-3">1. Add Musicians</h2>
+            <h2 class="text-2xl font-semibold text-gray-800 mb-3">1. Add Musicians & Utilities</h2>
             <div class="flex flex-col md:flex-row gap-4">
                 <textarea id="name-input" placeholder="Paste names from a spreadsheet (one name per line)" rows="4" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-gray-500 focus:border-gray-500"></textarea>
                 <div class="flex flex-col space-y-2">
-                    <!-- PRIMARY BUTTON: Black background, White text -->
-                    <button id="add-names-btn" class="px-6 py-3 bg-gray-900 text-white font-bold rounded-lg hover:bg-gray-700 transition duration-150 shadow-md">
+                    <!-- 1. Add Names -->
+                    <button id="add-names-btn" class="px-6 py-3 bg-white text-gray-900 font-bold rounded-lg hover:bg-gray-100 transition duration-150 shadow-md border-2 border-gray-900">
                         Add Names
                     </button>
-                    <!-- NEW UTILITY BUTTON: White background, Black border -->
-                    <button id="download-chart-btn" class="px-6 py-3 bg-white text-gray-900 font-bold rounded-lg hover:bg-gray-100 transition duration-150 shadow-md border-2 border-gray-900">
-                        Download Chart Image
-                    </button>
-                    <!-- UTILITY BUTTON: White background, Black border -->
+                    
+                    <!-- 2. Seat All Unseated -->
                     <button id="seat-all-btn" class="px-6 py-3 bg-white text-gray-900 font-bold rounded-lg hover:bg-gray-100 transition duration-150 shadow-md border-2 border-gray-900">
                         Seat All Unseated
                     </button>
-                    <!-- UTILITY BUTTON: Medium Gray background, Dark text -->
-                    <button id="clear-unseated-btn" class="px-6 py-3 bg-gray-400 text-gray-900 font-bold rounded-lg hover:bg-gray-500 transition duration-150 shadow-md">
+
+                    <!-- 3. Clear Unseated List -->
+                    <button id="clear-unseated-btn" class="px-6 py-3 bg-white text-gray-900 font-bold rounded-lg hover:bg-gray-100 transition duration-150 shadow-md border-2 border-gray-900">
                         Clear Unseated List
                     </button>
-                    <!-- DESTRUCTIVE BUTTON: White background, Black border -->
-                    <button id="clear-stage-btn" class="px-6 py-3 border-2 border-gray-900 bg-white text-gray-900 font-bold rounded-lg hover:bg-gray-100 transition duration-150 shadow-md">
+                    
+                    <!-- 4. Clear Seating -->
+                    <button id="clear-stage-btn" class="px-6 py-3 bg-white text-gray-900 font-bold rounded-lg hover:bg-gray-100 transition duration-150 shadow-md border-2 border-gray-900">
                         Clear Seating
                     </button>
+                    <!-- NOTE: Download Chart Image button moved to the stage header -->
                 </div>
             </div>
         </div>
@@ -124,27 +158,42 @@
                 </div>
             </div>
 
-            <!-- Stage Area (Right/Main Column) - Now Black and White/Gray -->
+            <!-- Stage Area (Right/Main Column) - Takes up 3 columns -->
             <div class="lg:col-span-3">
                 <!-- STAGE HEADER: Light gray background, dark text -->
                 <div class="p-4 bg-gray-200 rounded-t-xl text-gray-900 shadow-xl border-b border-gray-400">
-                    <!-- MODIFIED LABEL TO INCLUDE DYNAMIC CLASS NAME -->
-                    <h2 class="text-xl font-bold">3. The Ensemble Stage: <span id="stage-class-name" class="font-extrabold text-gray-900">Loading...</span></h2>
-                    <p class="text-sm text-gray-700">Seated Musicians (<span id="seated-count">0</span>). **Double-click/Double-tap** a card to unseat it.</p>
-                </div>
-                <div id="stage" class="rounded-b-xl shadow-2xl" ondrop="drop(event)" ondragover="allowDrop(event)">
                     
-                    <!-- NEW: Class Name Label INSIDE the Stage -->
-                    <div id="stage-internal-label" class="absolute top-4 left-1/2 transform -translate-x-1/2 text-2xl font-black text-gray-500/70 p-2 rounded-lg pointer-events-none z-0">
-                        <!-- Name will be populated by JS -->
+                    <!-- Title and Download Button Row (NEW FLEX CONTAINER) -->
+                    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 sm:mb-0">
+                        <!-- MODIFIED LABEL TO INCLUDE DYNAMIC CLASS NAME -->
+                        <h2 class="text-xl font-bold mb-2 sm:mb-0">3. The Ensemble Stage: <span id="stage-class-name" class="font-extrabold text-gray-900">Loading...</span></h2>
+                        
+                        <!-- Download Chart PDF Button (UPDATED LOCATION) -->
+                        <button id="download-chart-btn" class="px-4 py-2 bg-gray-800 text-white text-sm font-bold rounded-lg hover:bg-gray-700 transition duration-150 shadow-md w-full sm:w-auto">
+                            Download PDF
+                        </button>
                     </div>
 
-                    <!-- Seating chart visualization goes here -->
-                    <!-- Changed placeholder text color for better contrast on white background -->
-                    <div class="absolute inset-0 flex items-center justify-center text-gray-600 text-3xl font-light pointer-events-none">
-                        Drop Name Cards Here
+                    <p class="text-sm text-gray-700">Seated Musicians (<span id="seated-count">0</span>). **Double-click/Double-tap** a card to unseat it.</p>
+                </div>
+                
+                <!-- NEW WRAPPER DIV for Aspect Ratio (1.29:1) -->
+                <div id="stage-wrapper" class="rounded-b-xl shadow-2xl">
+                    <!-- The stage itself is now absolutely positioned inside the wrapper -->
+                    <div id="stage" ondrop="drop(event)" ondragover="allowDrop(event)">
+                        
+                        <!-- NEW: Class Name Label INSIDE the Stage -->
+                        <div id="stage-internal-label" class="absolute top-4 left-1/2 transform -translate-x-1/2 text-2xl font-black text-gray-500/70 p-2 rounded-lg pointer-events-none z-0">
+                            <!-- Name will be populated by JS -->
+                        </div>
+
+                        <!-- Seating chart visualization goes here -->
+                        <div class="absolute inset-0 flex items-center justify-center text-gray-600 text-3xl font-light pointer-events-none">
+                            Drop Name Cards Here
+                        </div>
                     </div>
                 </div>
+
             </div>
 
         </div>
@@ -155,6 +204,9 @@
         // Data persistence key for local storage
         const STORAGE_KEY = 'ORCHESTRA_SEATING_CHART_MULTICLASS_DATA'; 
         
+        // Ensure jsPDF is loaded before trying to use it
+        const { jsPDF } = window.jspdf;
+
         const statusMessage = document.getElementById('status-message');
         const unseatedList = document.getElementById('unseated-list');
         const stage = document.getElementById('stage');
@@ -164,8 +216,11 @@
         const currentClassInfo = document.getElementById('current-class-info');
         // Reference to the span that displays the class name in the external stage header
         const stageClassNameSpan = document.getElementById('stage-class-name'); 
-        // NEW: Reference to the div that displays the class name inside the stage
+        // Reference to the div that displays the class name inside the stage
         const stageInternalLabel = document.getElementById('stage-internal-label');
+        // Import file input reference
+        const importFileInput = document.getElementById('import-file-input');
+
 
         // Global State Management
         let appState = {
@@ -359,12 +414,18 @@
             const isSingleClass = classKeys.length <= 1;
             const renameBtn = document.getElementById('rename-class-btn');
             const deleteBtn = document.getElementById('delete-class-btn');
+            const exportBtn = document.getElementById('export-class-btn');
+            const importLabel = document.getElementById('import-class-label');
+
 
             if (classKeys.length === 0) {
                  currentClassInfo.textContent = `Current Class: No Class Loaded`;
                  classSelector.disabled = true;
                  renameBtn.disabled = true;
                  deleteBtn.disabled = true;
+                 exportBtn.disabled = true;
+                 // Set opacity/pointer events on the label wrapper for Import
+                 importLabel.classList.add('opacity-50', 'pointer-events-none');
                  return;
             }
 
@@ -383,11 +444,16 @@
                 
                 // Enable/Disable buttons based on current state
                 renameBtn.disabled = !classId;
+                exportBtn.disabled = !classId;
+                importLabel.classList.remove('opacity-50', 'pointer-events-none');
+                
                 // Only allow deletion if there is more than one class.
                 deleteBtn.disabled = isSingleClass; 
             } else {
                 renameBtn.disabled = true;
                 deleteBtn.disabled = true;
+                exportBtn.disabled = true;
+                importLabel.classList.add('opacity-50', 'pointer-events-none');
             }
 
             currentClassInfo.textContent = `Current Class: ${className}`;
@@ -445,7 +511,7 @@
             const classKeys = Object.keys(appState.classes);
             
             // Safety check: ensure we are not deleting the last class
-            if (!currentClass || classKeys.length <= 1) {
+            if (classKeys.length <= 1) {
                 showStatus("Cannot delete the only remaining class. Create another class first.", 'error');
                 return;
             }
@@ -746,11 +812,11 @@
             }
         }
         
-        /** Converts the stage into a PNG image and triggers a download. (New Function) */
-        async function downloadChartImage() {
+        /** Converts the stage into a PDF document and triggers a download. (UPDATED Function) */
+        async function downloadChartPDF() {
             const stageElement = document.getElementById('stage');
             
-            showStatus("Generating image, please wait...", 'info');
+            showStatus("Generating PDF, please wait (this may take a few moments)...", 'info');
 
             // Find and temporarily hide the "Drop Name Cards Here" placeholder
             const placeholder = stageElement.querySelector('.absolute.inset-0:not(#stage-internal-label)');
@@ -760,33 +826,54 @@
             }
 
             try {
-                // html2canvas takes a screenshot of the DOM element
+                // 1. Capture the HTML element as a canvas (high resolution)
                 const canvas = await html2canvas(stageElement, {
                     scale: 2, // Use scale 2 for better resolution
                     backgroundColor: 'white' 
                 });
 
-                // Convert canvas to image URL
-                const imageURI = canvas.toDataURL("image/png");
+                const imgData = canvas.toDataURL('image/png');
+                
+                // 2. Initialize jsPDF (US Letter size in landscape orientation)
+                // Unit is 'pt' (points), size is 'letter', orientation is 'landscape' (11x8.5)
+                const pdf = new jsPDF('landscape', 'pt', 'letter');
+                
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = pdf.internal.pageSize.getHeight();
 
-                // Get the current class name for the filename
+                // Get the dimensions of the captured image
+                const imgProps = pdf.getImageProperties(imgData);
+                const imgWidth = imgProps.width;
+                const imgHeight = imgProps.height;
+
+                // 3. Calculate scaling factor to fit the stage aspect ratio (1.29:1) within the PDF (1.294:1)
+                // We fit by width since the stage is designed to be landscape-oriented (W > H)
+                const ratio = imgWidth / imgHeight; // Should be ~1.29
+                
+                // Use most of the PDF width (95% to allow for margins)
+                const chartWidth = pdfWidth * 0.95; 
+                const chartHeight = chartWidth / ratio;
+                
+                // Calculate centering offsets
+                const xOffset = (pdfWidth - chartWidth) / 2;
+                const yOffset = (pdfHeight - chartHeight) / 2;
+
+                // 4. Add the image to the PDF
+                pdf.addImage(imgData, 'PNG', xOffset, yOffset, chartWidth, chartHeight);
+
+                // 5. Get the current class name for the filename
                 const className = appState.classes[appState.currentClassId]?.name || "Seating_Chart";
                 // Sanitize and create filename
-                const filename = `${className.replace(/[^a-z0-9]/gi, '_')}_Seating_Chart.png`;
+                const filename = `${className.replace(/[^a-z0-9]/gi, '_')}_Seating_Chart.pdf`;
 
-                // Create a temporary link element to trigger the download
-                const a = document.createElement('a');
-                a.href = imageURI;
-                a.download = filename;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                // 6. Trigger download
+                pdf.save(filename);
 
-                showStatus("Seating chart image downloaded successfully!", 'success');
+                showStatus("Seating chart PDF downloaded successfully!", 'success');
 
             } catch (error) {
-                console.error("Error generating image:", error);
-                showStatus("Failed to generate and download the chart image.", 'error');
+                console.error("Error generating PDF:", error);
+                showStatus("Failed to generate and download the chart PDF. Check console for details.", 'error');
             } finally {
                 // Restore the placeholder text display if it was hidden
                 if (placeholderWasVisible) {
@@ -803,7 +890,7 @@
             const CARD_HEIGHT = 30; // Estimate height for calculation
             const SPACING = 20; // Space between cards
 
-            const stageRect = stage.getBoundingClientRect();
+            // Use offsetWidth and offsetHeight which are correct due to the aspect ratio CSS
             const stageWidth = stage.offsetWidth;
             const stageHeight = stage.offsetHeight;
 
@@ -849,6 +936,113 @@
                 showStatus("All musicians are already seated.", 'info');
             }
         }
+        
+        // --- Export/Import Functions ---
+        
+        /** Exports the current class data to a downloadable JSON file. */
+        async function exportClassData() {
+            if (!appState.currentClassId) {
+                showStatus("Please select or create a class first.", 'error');
+                return;
+            }
+
+            const currentClass = appState.classes[appState.currentClassId];
+            if (!currentClass) return;
+
+            try {
+                // Format JSON nicely for readability
+                const data = JSON.stringify(currentClass, null, 2); 
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                // Create a temporary link element to trigger download
+                const a = document.createElement('a');
+                a.href = url;
+                // Sanitize and create filename
+                const filename = `${currentClass.name.replace(/[^a-z0-9]/gi, '_')}_Ensemble_Chart.json`;
+                a.download = filename;
+                
+                // Trigger download
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url); // Clean up the object URL
+
+                showStatus(`Data for "${currentClass.name}" downloaded as ${filename}.`, 'success');
+            } catch (error) {
+                console.error("Error exporting class data:", error);
+                showStatus("Failed to export class data. Check console for details.", 'error');
+            }
+        }
+        
+        /** Handles the file input change event to import a class JSON file. */
+        async function handleImportFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (file.type !== "application/json" && !file.name.toLowerCase().endsWith('.json')) {
+                showStatus("Invalid file type. Please select a .json file.", 'error');
+                event.target.value = ''; 
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const importedData = JSON.parse(e.target.result);
+                    
+                    // Basic Validation Check
+                    if (typeof importedData.name !== 'string' || !Array.isArray(importedData.musicians)) {
+                        showStatus("Invalid file structure. File must contain 'name' (string) and 'musicians' (array).", 'error');
+                        return;
+                    }
+
+                    // Ensure the imported class name is unique or append a number
+                    let baseName = importedData.name.trim() || 'Imported Class';
+                    let newClassName = baseName;
+                    let counter = 1;
+                    
+                    const existingNames = Object.values(appState.classes).map(c => c.name);
+                    while (existingNames.includes(newClassName)) {
+                        newClassName = `${baseName} (${counter++})`;
+                    }
+
+                    // Create a new unique ID for the imported class
+                    const newId = generateUniqueId();
+                    
+                    // Sanitize imported musicians data
+                    const sanitizedMusicians = importedData.musicians.map(m => ({
+                        id: m.id || generateUniqueId(),
+                        name: (m.name && typeof m.name === 'string' && m.name.trim()) ? m.name.trim() : 'Unnamed Musician',
+                        // Ensure x/y are valid numbers if present
+                        x: (m.x !== undefined && m.x !== null && !isNaN(m.x)) ? Math.round(m.x) : undefined,
+                        y: (m.y !== undefined && m.y !== null && !isNaN(m.y)) ? Math.round(m.y) : undefined
+                    }));
+
+                    // 1. Add to state
+                    appState.classes[newId] = {
+                        name: newClassName,
+                        musicians: sanitizedMusicians
+                    };
+                    
+                    // 2. Load the new class
+                    await loadClass(newId);
+                    showStatus(`Successfully imported group: "${newClassName}".`, 'success');
+
+                } catch (error) {
+                    console.error("Error processing imported JSON file:", error);
+                    showStatus("Error reading or parsing the JSON file. It may be corrupted.", 'error');
+                } finally {
+                    // Reset file input to allow the user to import the same file again if needed
+                    event.target.value = ''; 
+                }
+            };
+            reader.onerror = () => {
+                showStatus("Error reading file.", 'error');
+                event.target.value = ''; 
+            };
+            reader.readAsText(file);
+        }
 
         // --- Event Listeners ---
 
@@ -856,8 +1050,13 @@
             loadClass(e.target.value);
         });
         
-        // Attach download function to new button
-        document.getElementById('download-chart-btn').addEventListener('click', downloadChartImage);
+        // Attach download PDF function to button
+        document.getElementById('download-chart-btn').addEventListener('click', downloadChartPDF);
+        
+        // Attach Export/Import listeners
+        document.getElementById('export-class-btn').addEventListener('click', exportClassData);
+        importFileInput.addEventListener('change', handleImportFile);
+
 
         document.getElementById('add-names-btn').addEventListener('click', async () => {
             const input = document.getElementById('name-input').value.trim();
