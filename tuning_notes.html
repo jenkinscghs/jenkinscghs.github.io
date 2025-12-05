@@ -1,0 +1,310 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>String Orchestra Tuning Notes</title>
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#10172a;
+      --accent:#2dd4bf;     /* teal */
+      --accent2:#60a5fa;    /* blue */
+      --text:#e5e7eb;
+      --muted:#94a3b8;
+      --shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: radial-gradient(1200px 600px at 15% 10%, #0e1726, var(--bg));
+    }
+
+    header {
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 {
+      font-size: clamp(18px, 3.2vw, 24px);
+      margin: 0;
+      letter-spacing: 0.3px;
+      font-weight: 650;
+    }
+    header .hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      padding: 16px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .note {
+      cursor: pointer;
+      background: linear-gradient(180deg, #101827, #0b1324);
+      border: 1px solid rgba(255,255,255,0.08);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 24px;
+      min-height: 110px;
+      display: grid;
+      place-items: center;
+      box-shadow: var(--shadow);
+      transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+      user-select: none;
+      position: relative;
+      isolation: isolate;
+    }
+    .note:hover { transform: translateY(-2px); }
+    .note:active { transform: translateY(0); }
+    .note.active {
+      border-color: rgba(45,212,191,0.6);
+      box-shadow: 0 14px 36px rgba(45,212,191,0.25);
+      outline: 2px solid rgba(45,212,191,0.35);
+    }
+    .note-label {
+      font-size: clamp(28px, 6.5vw, 44px);
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      line-height: 1;
+      text-shadow: 0 3px 18px rgba(96,165,250,0.25);
+    }
+    .sub {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* Full-screen overlay when a note is playing */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      background: radial-gradient(1200px 600px at 50% 30%, #0b1223, #060912);
+      z-index: 50;
+      place-items: center;
+      text-align: center;
+    }
+    .overlay.active { display: grid; }
+    .overlay .big-note {
+      font-size: clamp(120px, 22vw, 320px);
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      color: #e6fdf9;
+      text-shadow:
+        0 8px 30px rgba(45,212,191,0.28),
+        0 18px 60px rgba(96,165,250,0.25);
+    }
+    .overlay .overlay-sub {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: clamp(12px, 2.8vw, 16px);
+    }
+
+    /* Simple footer help text */
+    footer {
+      padding: 10px 16px 18px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Orchestra Tuning</h1>
+    <div class="hint">Click a pitch to go full screen. Click again to stop.</div>
+  </header>
+
+  <main class="grid" id="grid">
+    <!-- Buttons created by JS -->
+  </main>
+
+  <div class="overlay" id="overlay" aria-hidden="true">
+    <div>
+      <div class="big-note" id="bigNote">A4</div>
+      <div class="overlay-sub">Click, Space, or Esc to stop</div>
+    </div>
+  </div>
+
+  <footer>
+    A4 = 440 Hz • Warm layered tone (sine + triangle + low‑pass). Change to pure sine in code if desired.
+  </footer>
+
+  <script>
+    // Notes (equal temperament, A4=440 Hz)
+    const NOTES = [
+      { label: "A4", freq: 440.00, info: "Violin/Viola A" },
+      { label: "D4", freq: 293.66, info: "Violin/Viola D" },
+      { label: "G3", freq: 196.00, info: "Violin/Viola G" },
+      { label: "C3", freq: 130.81, info: "Viola/Cello C" },
+      { label: "E2", freq: 82.41,  info: "Bass E" },
+      { label: "E5", freq: 659.25, info: "Violin E" }
+    ];
+
+    // Audio setup
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx(); // created now; resumed on first user gesture
+    let currentVoice = null;
+    let currentNoteLabel = null;
+    let activeButton = null;
+
+    // Create the grid buttons
+    const grid = document.getElementById('grid');
+    const overlay = document.getElementById('overlay');
+    const bigNote = document.getElementById('bigNote');
+
+    NOTES.forEach(note => {
+      const btn = document.createElement('button');
+      btn.className = 'note';
+      btn.setAttribute('aria-label', `${note.label} tuning note`);
+      btn.innerHTML = `
+        <div class="note-label">${note.label}</div>
+        <div class="sub">${note.freq.toFixed(2)} Hz${note.info ? " • " + note.info : ""}</div>
+      `;
+      btn.addEventListener('click', async () => {
+        await audioCtx.resume(); // iOS/Safari unlock
+        if (currentVoice && currentNoteLabel === note.label) {
+          stopCurrent();
+        } else {
+          startNote(note, btn);
+        }
+      });
+      grid.appendChild(btn);
+    });
+
+    // Overlay click stops
+    overlay.addEventListener('click', () => stopCurrent());
+
+    // Keyboard: Space/Escape stop; digits 1..6 trigger notes
+    window.addEventListener('keydown', async (e) => {
+      if (e.code === 'Space' || e.code === 'Escape') {
+        e.preventDefault();
+        stopCurrent();
+      } else {
+        // Optional: number keys 1..6 trigger notes
+        const idx = parseInt(e.key, 10);
+        if (!isNaN(idx) && idx >= 1 && idx <= NOTES.length) {
+          await audioCtx.resume();
+          const note = NOTES[idx - 1];
+          const btn = grid.children[idx - 1];
+          startNote(note, btn);
+        }
+      }
+    });
+
+    // Build a warm, stable tuning voice:
+    //   - Layered sine + triangle (very quiet triangle for gentle harmonics)
+    //   - Low-pass filter to soften highs
+    //   - Smooth ADS-like envelope to avoid clicks
+    function createVoice(freq) {
+      // Oscillators
+      const oscSine = audioCtx.createOscillator();
+      oscSine.type = 'sine';
+      oscSine.frequency.value = freq;
+
+      const oscTri = audioCtx.createOscillator();
+      oscTri.type = 'triangle';
+      oscTri.frequency.value = freq;
+
+      // Gains for layers
+      const gSine = audioCtx.createGain();
+      gSine.gain.value = 0.85; // main body
+
+      const gTri = audioCtx.createGain();
+      gTri.gain.value = 0.12; // subtle harmonic
+
+      // Optional low-pass filter for warmth
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 2400; // soften brightness
+      filter.Q.value = 0.5;
+
+      // Master gain with envelope
+      const master = audioCtx.createGain();
+      master.gain.value = 0;
+
+      // Routing
+      oscSine.connect(gSine);
+      oscTri.connect(gTri);
+      gSine.connect(filter);
+      gTri.connect(filter);
+      filter.connect(master);
+      master.connect(audioCtx.destination);
+
+      // Envelope: quick attack, gentle release
+      const now = audioCtx.currentTime;
+      const targetLevel = 0.9;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(0.0, now);
+      master.gain.linearRampToValueAtTime(targetLevel, now + 0.08);  // attack ~80ms
+      master.gain.linearRampToValueAtTime(targetLevel * 0.95, now + 0.18); // slight settle
+
+      // Start
+      oscSine.start();
+      oscTri.start();
+
+      return {
+        stop: () => {
+          const t = audioCtx.currentTime;
+          master.gain.cancelScheduledValues(t);
+          master.gain.setValueAtTime(master.gain.value, t);
+          master.gain.linearRampToValueAtTime(0.0, t + 0.15); // release ~150ms
+          // Stop oscillators after envelope
+          setTimeout(() => {
+            try { oscSine.stop(); oscTri.stop(); } catch(_) {}
+            master.disconnect();
+          }, 180);
+        },
+        master,
+        label: freq
+      };
+    }
+
+    function startNote(note, btn) {
+      stopCurrent(); // ensure only one at a time
+      currentVoice = createVoice(note.freq);
+      currentNoteLabel = note.label;
+      activeButton = btn;
+      activeButton.classList.add('active');
+
+      // Show overlay
+      bigNote.textContent = note.label;
+      overlay.classList.add('active');
+      overlay.setAttribute('aria-hidden', 'false');
+    }
+
+    function stopCurrent() {
+      if (currentVoice) {
+        currentVoice.stop();
+        currentVoice = null;
+      }
+      if (activeButton) {
+        activeButton.classList.remove('active');
+        activeButton = null;
+      }
+      currentNoteLabel = null;
+      overlay.classList.remove('active');
+      overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    // === If you prefer a Pure Sine tone ===
+    // In createVoice():
+    //   - Remove triangle layer (oscTri/gTri) connections and start
+    //   - Optionally raise filter.frequency to ~8000 or bypass the filter:
+    //       gSine.connect(master);  // instead of through 'filter'
+    //       // and remove 'filter' nodes entirely
+  </script>
+</body>
+</html>
