@@ -1,0 +1,490 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Metronome – Look-ahead Scheduler (Sharp Click + Brighter Accent)</title>
+<style>
+  :root {
+    --bg: #0f1222;
+    --text: #e9ecf4;
+    --muted: #a9b1c7;
+    --beat: #3a4169;
+    --accent: #ffc857;
+    --active: #61dafb;
+    --danger: #ef476f;
+    --ok: #06d6a0;
+  }
+  html, body {
+    height: 100%;
+    background: radial-gradient(900px 600px at 70% 10%, #161a30 0%, #0f1222 50%, #0b0e1a 100%);
+    color: var(--text);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    margin: 0;
+  }
+  header { padding: 20px 24px 8px; }
+  header h1 { margin: 0 0 6px; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .panel {
+    margin: 12px 24px 18px;
+    background: rgba(27,32,55,0.75);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(1, minmax(140px, 1fr));
+    gap: 12px;
+    align-items: end;
+  }
+  .control { display: grid; gap: 6px; }
+  .control label { font-size: 24px; color: var(--muted); }
+  .num, input[type="range"] { width: 80%; accent-color:darkgray;}
+  .num {
+    background: #121527;
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 24px;
+    outline: none;
+  }
+
+  .buttons {
+    display: flex;
+    flex-wrap: nowrap;   /* one line; scroll if many */
+    gap: 10px;
+    padding: 12px 14px;
+    overflow-x: auto;
+  }
+  .beat-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--beat);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--text);
+    display: grid;
+    place-items: center;
+    font-weight: 600;
+    user-select: none;
+    cursor: pointer;
+    transition: transform 90ms ease, box-shadow 90ms ease, background 120ms ease, color 120ms ease;
+  }
+  .beat-btn:hover { transform: translateY(-2px); }
+  .beat-btn.accent { background: linear-gradient(180deg, #ffd777 0%, #ffbc40 100%); color: #1b2037; }
+  .beat-btn.active {
+    box-shadow: 0 0 0 2px var(--active), 0 0 16px rgba(97,218,251,0.35) inset;
+    outline: none;
+  }
+
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+  .row .spacer { flex: 1; }
+
+  button.main {
+    background: var(--ok);
+    color: #06121a;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: filter 120ms ease, transform 90ms ease;
+  }
+  button.main.stop { background: var(--danger); color: #fff; }
+  button.main:active { transform: translateY(1px); }
+  button.secondary {
+    background: #121527;
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+  }
+  .note { font-size: 12px; color: var(--muted); }
+
+
+
+  
+</style>
+</head>
+<body>
+  <header>
+    <h1>Metronome</h1>
+    <p>Look‑ahead scheduler for rock‑solid timing. Unaccented: sharp click. Accented: brighter/snappier click.</p>
+  </header>
+
+  <section class="panel">
+    <div class="controls">
+      <div class="control">
+        <label for="bpm">Tempo (BPM)</label>
+        <input id="bpm" type="range" min="30" max="300" value="100" />
+        <input id="bpmNum" class="num" type="number" min="30" max="300" value="100" />
+     
+        <label for="beats">Beats per measure (1–20)</label>
+        <input id="beats" class="num" type="number" min="1" max="20" value="4" />
+      </div>
+
+      
+    </div>
+<span class="note">Toggle any square to accent/unaccent. Use “Clear accents” for none.</span>
+    <div id="buttons" class="buttons" aria-label="Beat buttons"></div>
+
+    <div class="row">
+      
+      <!--<span class="spacer"></span>------------------->
+      <button id="startStop" class="main">Start</button>
+      <button id="clearAccents" class="secondary">Clear accents</button>
+      <button id="accentBeat1" class="secondary">Accent beat 1</button>
+    </div>
+
+<div class="controls">
+    <div class="control">
+        <label for="volume">Master volume</label>
+        <input id="volume" class="vertical" type="range" min="0" max="100" value="70" />
+      
+        <label for="clickLevel">Click level</label>
+        <input id="clickLevel" class="vertical" type="range" min="0" max="100" value="85" />
+     
+        <label for="accentBoost">Accent boost</label>
+        <input id="accentBoost" class="vertical" type="range" min="0" max="100" value="20" />
+      </div>
+  </div>
+  </section>
+
+<script>
+(() => {
+  // ---- State ----
+  let audioCtx = null;
+  let compressor = null;
+  let noiseBuffer = null;
+
+  let isPlaying = false;
+  let beatsPerMeasure = 4;
+  let bpm = 100;
+  let secondsPerBeat = 60 / bpm;
+
+  // Look-ahead scheduler
+  let schedulerId = null;                   // setInterval handle for scheduling loop
+  const lookaheadMs = 25;                   // how often we run the scheduler (ms)
+  const scheduleAheadTime = 0.1;            // how far ahead to schedule (sec)
+  let nextNoteTime = 0;                     // next beat time in AudioContext seconds
+
+  // Visual state
+  let currentBeat = 0;
+  let previousBeat = null;
+  const scheduledTimeouts = [];             // for visual highlights; cleared on stop
+
+  // Levels / accents
+  let masterVolume = 0.7;      // 0..1
+  let clickLevel = 0.85;       // 0..1
+  let accentBoost = 0.20;      // 0..1 (extra level for accent click)
+  let accents = [];            // boolean flags per beat
+
+  // ---- Elements ----
+  const elButtons = document.getElementById('buttons');
+  const elBpm = document.getElementById('bpm');
+  const elBpmNum = document.getElementById('bpmNum');
+  const elBeats = document.getElementById('beats');
+  const elStartStop = document.getElementById('startStop');
+  const elVolume = document.getElementById('volume');
+  const elClickLevel = document.getElementById('clickLevel');
+  const elAccentBoost = document.getElementById('accentBoost');
+  const elClearAccents = document.getElementById('clearAccents');
+  const elAccentBeat1 = document.getElementById('accentBeat1');
+
+  // ---- UI builders ----
+  function buildButtons() {
+    elButtons.innerHTML = '';
+    accents = Array.from({ length: beatsPerMeasure }, (_, i) => i === 0); // default accent beat 1
+    for (let i = 0; i < beatsPerMeasure; i++) {
+      const btn = document.createElement('button');
+      btn.className = 'beat-btn';
+      btn.textContent = (i + 1);
+      btn.setAttribute('aria-pressed', accents[i] ? 'true' : 'false');
+      if (accents[i]) btn.classList.add('accent');
+      btn.addEventListener('click', () => toggleAccent(i, btn));
+      elButtons.appendChild(btn);
+    }
+  }
+
+  function toggleAccent(i, btnEl) {
+    accents[i] = !accents[i];
+    btnEl.classList.toggle('accent', accents[i]);
+    btnEl.setAttribute('aria-pressed', accents[i] ? 'true' : 'false');
+  }
+
+  function highlightBeat(index) {
+    if (previousBeat !== null) {
+      const prevEl = elButtons.children[previousBeat];
+      if (prevEl) prevEl.classList.remove('active');
+    }
+    const el = elButtons.children[index];
+    if (el) el.classList.add('active');
+    previousBeat = index;
+  }
+
+  function clearHighlights() {
+    [...elButtons.children].forEach(el => el.classList.remove('active'));
+    previousBeat = null;
+  }
+
+  // ---- Audio init ----
+  function ensureAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC();
+
+      // Shared compressor to keep punch without clipping (connect once)
+      compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -12;
+      compressor.knee.value = 15;
+      compressor.ratio.value = 6;
+      compressor.attack.value = 0.002;
+      compressor.release.value = 0.06;
+      compressor.connect(audioCtx.destination);
+
+      // Shared noise buffer (avoid per-tick buffer allocation)
+      noiseBuffer = createNoiseBuffer(0.05);
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  function createNoiseBuffer(durationSec = 0.03) {
+    const length = Math.floor(audioCtx.sampleRate * durationSec);
+    const buffer = audioCtx.createBuffer(1, length, audioCtx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1);
+    return buffer;
+  }
+
+  // ---- Sound design ----
+  // Base click (unaccented): transient square + filtered noise
+  function playBaseClick(time, levelMul = 1.0) {
+    const master = audioCtx.createGain();
+    master.gain.value = masterVolume * levelMul;
+    master.connect(compressor);
+
+    // Transient square burst (crisp attack)
+    const osc = audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(2000, time); // transient pitch for base click
+    const oscGain = audioCtx.createGain();
+    oscGain.gain.setValueAtTime(0.0, time);
+    oscGain.gain.linearRampToValueAtTime(clickLevel, time + 0.002);      // ~2ms attack
+    oscGain.gain.exponentialRampToValueAtTime(0.0008, time + 0.012);     // ~10ms decay
+    osc.connect(oscGain);
+    oscGain.connect(master);
+    osc.start(time); osc.stop(time + 0.02);
+
+    // Filtered noise body (band-pass + high-pass)
+    const noiseSrc = audioCtx.createBufferSource();
+    noiseSrc.buffer = noiseBuffer;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2000, time);
+    bp.Q.setValueAtTime(5.0, time);
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(1000, time);
+    hp.Q.setValueAtTime(0.7, time);
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(0.0, time);
+    noiseGain.gain.linearRampToValueAtTime(clickLevel * 0.8, time + 0.003);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0008, time + 0.04);
+    noiseSrc.connect(bp); bp.connect(hp); hp.connect(noiseGain); noiseGain.connect(master);
+    noiseSrc.start(time); noiseSrc.stop(time + 0.05);
+  }
+
+  // Accent click: same structure, slightly higher/brighter/faster
+  function playAccentClick(time) {
+    const master = audioCtx.createGain();
+    master.gain.value = masterVolume * (1.0 + accentBoost * 0.6); // gentle level lift
+    master.connect(compressor);
+
+    // Transient square burst (brighter)
+    const osc = audioCtx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(2400, time); // higher transient pitch for accent
+    const oscGain = audioCtx.createGain();
+    const accentAttack = 0.0018; // slightly faster
+    oscGain.gain.setValueAtTime(0.0, time);
+    oscGain.gain.linearRampToValueAtTime(Math.min(1.0, clickLevel * (1.0 + accentBoost)), time + accentAttack);
+    oscGain.gain.exponentialRampToValueAtTime(0.0006, time + 0.011); // shorter tail
+    osc.connect(oscGain);
+    oscGain.connect(master);
+    osc.start(time); osc.stop(time + 0.018);
+
+    // Brighter noise body
+    const noiseSrc = audioCtx.createBufferSource();
+    noiseSrc.buffer = noiseBuffer;
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2600, time);
+    bp.Q.setValueAtTime(5.5, time);
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.setValueAtTime(1400, time);
+    hp.Q.setValueAtTime(0.8, time);
+    const noiseGain = audioCtx.createGain();
+    noiseGain.gain.setValueAtTime(0.0, time);
+    noiseGain.gain.linearRampToValueAtTime(clickLevel * (0.8 + accentBoost * 0.4), time + 0.0025);
+    noiseGain.gain.exponentialRampToValueAtTime(0.0006, time + 0.035);
+    noiseSrc.connect(bp); bp.connect(hp); hp.connect(noiseGain); noiseGain.connect(master);
+    noiseSrc.start(time); noiseSrc.stop(time + 0.045);
+  }
+
+  function scheduleTick(time, beatIndex) {
+    const isAccent = accents[beatIndex];
+    if (isAccent) playAccentClick(time);
+    else playBaseClick(time, 1.0);
+
+    // Schedule visual highlight to match audio start
+    const delayMs = Math.max(0, (time - audioCtx.currentTime) * 1000);
+    const id = setTimeout(() => highlightBeat(beatIndex), delayMs);
+    scheduledTimeouts.push(id);
+  }
+
+  // ---- Scheduler loop ----
+  function scheduler() {
+    const now = audioCtx.currentTime;
+    while (nextNoteTime < now + scheduleAheadTime) {
+      scheduleTick(nextNoteTime, currentBeat);
+
+      // advance to next beat
+      nextNoteTime += secondsPerBeat;
+      currentBeat = (currentBeat + 1) % beatsPerMeasure;
+    }
+  }
+
+  function startScheduler() {
+    ensureAudio();
+    secondsPerBeat = 60 / bpm;
+    currentBeat = 0;
+    nextNoteTime = audioCtx.currentTime + 0.005; // tiny offset for first beat
+    clearHighlights();
+    clearScheduledTimeouts();
+
+    if (!schedulerId) {
+      schedulerId = setInterval(scheduler, lookaheadMs);
+    }
+    isPlaying = true;
+    elStartStop.textContent = 'Stop';
+    elStartStop.classList.add('stop');
+  }
+
+  function stopScheduler() {
+    if (schedulerId) {
+      clearInterval(schedulerId);
+      schedulerId = null;
+    }
+    clearScheduledTimeouts();
+    clearHighlights();
+    isPlaying = false;
+    elStartStop.textContent = 'Start';
+    elStartStop.classList.remove('stop');
+  }
+
+  function clearScheduledTimeouts() {
+    while (scheduledTimeouts.length) {
+      const id = scheduledTimeouts.pop();
+      clearTimeout(id);
+    }
+  }
+
+  function restartIfPlaying() {
+    if (isPlaying) {
+      stopScheduler();
+      startScheduler();
+    }
+  }
+
+  // ---- Events ----
+  elStartStop.addEventListener('click', () => {
+    if (!isPlaying) startScheduler(); else stopScheduler();
+  });
+
+  // BPM sync
+  function setBpm(val) {
+    const n = Math.max(30, Math.min(300, Number(val) || 100));
+    bpm = n;
+    elBpm.value = String(n);
+    elBpmNum.value = String(n);
+    secondsPerBeat = 60 / bpm;
+    restartIfPlaying();
+  }
+  elBpm.addEventListener('input', e => setBpm(e.target.value));
+  elBpmNum.addEventListener('input', e => setBpm(e.target.value));
+
+  // Beats per measure
+  elBeats.addEventListener('input', e => {
+    const n = Math.max(1, Math.min(20, Number(e.target.value) || 4));
+    beatsPerMeasure = n;
+    elBeats.value = String(n);
+    buildButtons();
+    restartIfPlaying();
+  });
+
+  // Volume
+  elVolume.addEventListener('input', e => {
+    const v = Math.max(0, Math.min(100, Number(e.target.value) || 70));
+    masterVolume = v / 100;
+  });
+
+  // Click level
+  elClickLevel.addEventListener('input', e => {
+    const v = Math.max(0, Math.min(100, Number(e.target.value) || 85));
+    clickLevel = v / 100;
+  });
+
+  // Accent boost
+  elAccentBoost.addEventListener('input', e => {
+    const v = Math.max(0, Math.min(100, Number(e.target.value) || 20));
+    accentBoost = v / 100;
+  });
+
+  // Helpers
+  elClearAccents.addEventListener('click', () => {
+    accents.fill(false);
+    [...elButtons.children].forEach(el => {
+      el.classList.remove('accent');
+      el.setAttribute('aria-pressed', 'false');
+    });
+  });
+
+  elAccentBeat1.addEventListener('click', () => {
+    accents.fill(false);
+    accents[0] = true;
+    [...elButtons.children].forEach((el, i) => {
+      const on = i === 0;
+      el.classList.toggle('accent', on);
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  });
+
+  // Init
+  buildButtons();
+
+  // Optional: spacebar toggles start/stop
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      if (!isPlaying) startScheduler(); else stopScheduler();
+    }
+  });
+})();
+</script>
+</body>
+</html>
