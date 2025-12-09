@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web Metronome</title>
+   <style>
+    html, body { 
+        height: 100%; 
+    }
+    body {
+        font-family: Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        background-color: #f4f4f9;
+        padding: 20px;
+    }
+    .container {
+        background: #ffffff;
+        padding: 30px;
+        border-radius: 12px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        width: 100%;
+        text-align: center;
+    }
+    h1 {
+        color: #333;
+        margin-bottom: 20px;
+    }
+    .controls, .beat-indicators {
+        margin-bottom: 20px;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background-color: #fafafa;
+    }
+    .controls label, .controls input, .controls button {
+        display: block;
+        margin: 10px 0;
+        width: 100%;
+        box-sizing: border-box;
+    }
+    .controls input[type="range"] {
+        margin-top: 5px;
+    }
+    .controls button {
+        padding: 10px;
+        font-size: 16px;
+        cursor: pointer;
+        border: none;
+        border-radius: 5px;
+        transition: background-color 0.3s;
+    }
+    #startStopBtn {
+        background-color: #4CAF50;
+        color: white;
+    }
+    #startStopBtn.stop {
+        background-color: #f44336;
+    }
+    #startStopBtn:hover {
+        opacity: 0.9;
+    }
+    .beat-indicators {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        flex-wrap: wrap; 
+        padding: 15px;
+    }
+    .beat-circle {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background-color: #ccc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: #333;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background-color 0.2s, transform 0.1s;
+        flex-shrink: 0; 
+    }
+    .beat-circle.active {
+        background-color: #2196F3;
+        color: white;
+        transform: scale(1.1);
+    }
+    .beat-circle.accent {
+        border: 3px solid #FF9800;
+    }
+    .beat-circle.active.accent {
+        background-color: #FF9800;
+    }
+
+    /* --- RESPONSIVE ADJUSTMENTS --- */
+    /* --- RESPONSIVE ADJUSTMENTS --- */
+@media (max-width: 480px) {
+    
+    /* Change the main body text to a massive, bold red color */
+    body {
+        color: red !important;
+        font-weight: bold !important;
+        font-size: 30px !important;
+    }
+}
+</style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🎵 Web Metronome</h1>
+        
+        <div class="controls">
+            <label for="tempo">Tempo: <span id="tempoDisplay">120</span> BPM</label>
+            <input type="range" id="tempo" min="40" max="300" value="120">
+
+            <label for="beatsPerMeasure">Beats Per Measure (1-20): <span id="bpmDisplay">4</span></label>
+            <input type="number" id="beatsPerMeasure" min="1" max="20" value="4">
+            
+            <label for="volume">Volume:</label>
+            <input type="range" id="volume" min="0" max="1" step="0.01" value="0.75">
+            
+            <button id="startStopBtn">Start</button>
+        </div>
+
+        <h3>Click beats to toggle accent:</h3>
+        <div class="beat-indicators" id="beatIndicators">
+            </div>
+    </div>
+
+    <script>
+        
+        // JavaScript
+        
+        // --- Audio Context and Sounds ---
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        let volumeGainNode = audioContext.createGain();
+        volumeGainNode.connect(audioContext.destination);
+
+        // Function to create a simple, crisp sound
+        function createClick(frequency, duration, volume) {
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+
+            oscillator.type = 'sine'; 
+            oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+
+            gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
+            // Quick fade out for a 'click' sound
+            gainNode.gain.exponentialRampToValueAtTime(0.00001, audioContext.currentTime + duration);
+
+            oscillator.connect(gainNode);
+            gainNode.connect(volumeGainNode); // Connect to the main volume control
+
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+
+        // --- Metronome State and Variables ---
+        let isRunning = false;
+        let tempo = 120;
+        let beatsPerMeasure = 4;
+        let currentBeat = 0;
+        let timerWorker = null;
+        let accents = [true, false, false, false]; // Default: Beat 1 is accented
+        
+        // Scheduling variables
+        let lookahead = 25.0; // How far ahead to schedule audio (in milliseconds)
+        let scheduleAheadTime = 0.1; // How far ahead to schedule (in seconds)
+        let nextNoteTime = 0.0; // When the next note is due
+        let notesInQueue = []; // For visual updates
+
+        // --- DOM Elements ---
+        const tempoInput = document.getElementById('tempo');
+        const tempoDisplay = document.getElementById('tempoDisplay');
+        const bpmInput = document.getElementById('beatsPerMeasure');
+        const bpmDisplay = document.getElementById('bpmDisplay');
+        const volumeInput = document.getElementById('volume');
+        const startStopBtn = document.getElementById('startStopBtn');
+        const beatIndicatorsDiv = document.getElementById('beatIndicators');
+
+        // --- Metronome Logic ---
+
+        function nextNote() {
+            // Advance current beat
+            currentBeat = (currentBeat + 1) % beatsPerMeasure;
+            
+            // Calculate next note time
+            const secondsPerBeat = 60.0 / tempo;
+            nextNoteTime += secondsPerBeat;
+        }
+
+        function scheduleNote(beatNumber, time) {
+            // Add note to the queue for visual update
+            notesInQueue.push({ note: beatNumber, time: time });
+
+            // Determine sound type
+            const isAccent = accents[beatNumber];
+            const frequency = isAccent ? 600 : 440; // Higher frequency for accent
+            const duration = 0.05; 
+
+            // Schedule the sound
+            createClick(frequency, duration, 1.0); 
+        }
+
+        function scheduler() {
+            // While there are notes that will need to play before the next interval, schedule them
+            while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
+                scheduleNote(currentBeat, nextNoteTime);
+                nextNote();
+            }
+        }
+
+        function draw() {
+            let drawTime = audioContext.currentTime;
+            
+            // Highlight the beat that has just sounded
+            while (notesInQueue.length && notesInQueue[0].time < drawTime) {
+                const beatToHighlight = notesInQueue[0].note;
+                
+                // Remove 'active' class from all beats
+                document.querySelectorAll('.beat-circle').forEach(el => el.classList.remove('active'));
+
+                // Add 'active' class to the current beat
+                const currentBeatElement = document.getElementById(`beat-${beatToHighlight}`);
+                if (currentBeatElement) {
+                    currentBeatElement.classList.add('active');
+                }
+
+                notesInQueue.shift(); // Remove note from queue
+            }
+
+            // Request next draw frame for smooth animation
+            requestAnimationFrame(draw);
+        }
+
+        // --- UI & Event Handlers ---
+        
+        function updateBeatIndicators() {
+            beatIndicatorsDiv.innerHTML = ''; // Clear existing
+            // Reset accents array to match new beatsPerMeasure
+            const newAccents = [];
+            for (let i = 0; i < beatsPerMeasure; i++) {
+                // Keep existing accent if it fits, otherwise default to accenting beat 1
+                newAccents.push(accents[i] !== undefined ? accents[i] : (i === 0));
+            }
+            accents = newAccents;
+            
+            for (let i = 0; i < beatsPerMeasure; i++) {
+                const circle = document.createElement('div');
+                circle.classList.add('beat-circle');
+                circle.id = `beat-${i}`;
+                circle.textContent = i + 1;
+
+                if (accents[i]) {
+                    circle.classList.add('accent');
+                }
+
+                circle.addEventListener('click', () => toggleAccent(i));
+                beatIndicatorsDiv.appendChild(circle);
+            }
+        }
+
+        function toggleAccent(beatIndex) {
+            accents[beatIndex] = !accents[beatIndex];
+            const circle = document.getElementById(`beat-${beatIndex}`);
+            if (accents[beatIndex]) {
+                circle.classList.add('accent');
+            } else {
+                circle.classList.remove('accent');
+            }
+        }
+
+        function updateVolume(value) {
+            volumeGainNode.gain.value = value;
+        }
+
+        function startMetronome() {
+            if (isRunning) return; 
+            
+            // Ensure audio context is resumed (needed for some browsers)
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+
+            isRunning = true;
+            currentBeat = beatsPerMeasure - 1; 
+            nextNoteTime = audioContext.currentTime;
+            
+            // Use a Web Worker for reliable timing (separate thread from main UI)
+            timerWorker = new Worker(
+                URL.createObjectURL(new Blob([
+                    'self.onmessage = function(e) { if (e.data.start) { self.intervalId = setInterval(function(){ self.postMessage("tick"); }, e.data.interval); } else if (e.data == "stop") { clearInterval(self.intervalId); } };'
+                ], { type: "application/javascript" }))
+            );
+
+            timerWorker.onmessage = function(e) {
+                if (e.data == "tick") {
+                    scheduler();
+                }
+            };
+            
+            // Calculate the interval based on lookahead
+            timerWorker.postMessage({ start: true, interval: lookahead });
+
+            // Start the visual update loop
+            requestAnimationFrame(draw);
+
+            // Update UI
+            startStopBtn.textContent = 'Stop';
+            startStopBtn.classList.add('stop');
+        }
+
+        function stopMetronome() {
+            if (!isRunning) return;
+
+            isRunning = false;
+
+            if (timerWorker) {
+                timerWorker.terminate();
+                timerWorker = null;
+            }
+
+            // Clear visual indicators
+            document.querySelectorAll('.beat-circle').forEach(el => el.classList.remove('active'));
+            notesInQueue = [];
+
+            // Update UI
+            startStopBtn.textContent = 'Start';
+            startStopBtn.classList.remove('stop');
+        }
+
+        // --- Initial Setup and Listeners ---
+        
+        // Tempo input listener
+        tempoInput.addEventListener('input', (e) => {
+            tempo = parseInt(e.target.value);
+            tempoDisplay.textContent = tempo;
+        });
+
+        // Beats Per Measure input listener
+        bpmInput.addEventListener('input', (e) => {
+            let val = parseInt(e.target.value);
+            // Input validation
+            if (val < 1) val = 1;
+            if (val > 20) val = 20;
+
+            beatsPerMeasure = val;
+            bpmInput.value = beatsPerMeasure;
+            bpmDisplay.textContent = beatsPerMeasure;
+            
+            updateBeatIndicators();
+            // Reset state if running (optional, but cleaner)
+            if (isRunning) {
+                stopMetronome();
+                startMetronome();
+            }
+        });
+
+        // Volume input listener
+        volumeInput.addEventListener('input', (e) => {
+            updateVolume(parseFloat(e.target.value));
+        });
+
+        // Start/Stop button listener
+        startStopBtn.addEventListener('click', () => {
+            if (isRunning) {
+                stopMetronome();
+            } else {
+                startMetronome();
+            }
+        });
+
+        // Initial setup calls
+        updateVolume(volumeInput.value); // Set initial volume
+        updateBeatIndicators(); // Draw initial beat circles
+
+  
+    </script>
+</body>
+</html>
