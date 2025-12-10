@@ -212,7 +212,7 @@
 
             gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
             // Quick fade out for a 'click' sound
-            gainNode.gain.exponentialRampToValueAtTime(0.0000008, audioContext.currentTime + duration);
+            gainNode.gain.exponentialRampToValueAtTime(0.000001, audioContext.currentTime + duration);
 
             oscillator.connect(gainNode);
             gainNode.connect(volumeGainNode); // Connect to the main volume control
