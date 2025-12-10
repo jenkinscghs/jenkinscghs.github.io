@@ -207,7 +207,7 @@
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
 
-            oscillator.type = 'sawtooth'; 
+            oscillator.type = 'sine'; 
             oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
 
             gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
