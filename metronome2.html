@@ -173,11 +173,11 @@
 <body>
 
     <div class="container">
-        <h1>🎵 Web Metronome</h1>
+        <h1> Metronome</h1>
         
         <div class="controls">
-            <label for="tempo">Tempo: <span id="tempoDisplay">120</span> BPM</label>
-            <input type="range" id="tempo" min="40" max="300" value="120">
+            <label for="tempo">Tempo: <span id="tempoDisplay">100</span> BPM</label>
+            <input type="range" id="tempo" min="40" max="300" value="100">
 
             <label for="beatsPerMeasure">Beats Per Measure (1-20): <span id="bpmDisplay">4</span></label>
             <input type="range" id="beatsPerMeasure" min="1" max="20" value="4">
@@ -207,7 +207,7 @@
             const oscillator = audioContext.createOscillator();
             const gainNode = audioContext.createGain();
 
-            oscillator.type = 'sine'; 
+            oscillator.type = 'square'; 
             oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
 
             gainNode.gain.setValueAtTime(volume, audioContext.currentTime);
@@ -223,7 +223,7 @@
 
         // --- Metronome State and Variables ---
         let isRunning = false;
-        let tempo = 120;
+        let tempo = 100;
         let beatsPerMeasure = 4;
         let currentBeat = 0;
         let timerWorker = null;
