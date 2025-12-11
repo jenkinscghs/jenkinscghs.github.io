@@ -100,6 +100,57 @@
         background-color: #FF9800;
     }
 
+    /* --- NEW STYLES FOR PLUS/MINUS BUTTONS --- */
+
+    /* Container for tempo controls (label, buttons, and display) */
+    .tempo-control {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 5px; /* Adjust spacing above range input */
+    }
+
+    /* Style for the + / - buttons */
+    .tempo-btn {
+        width: 40px; /* fixed width */
+        height: 40px;
+        padding: 0;
+        font-size: 24px;
+        font-weight: bold;
+        line-height: 1;
+        cursor: pointer;
+        background-color: #f0f0f0;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        transition: background-color 0.1s;
+        flex-shrink: 0; /* Prevents buttons from shrinking */
+    }
+
+    .tempo-btn:hover {
+        background-color: #e0e0e0;
+    }
+    
+    .tempo-label {
+        /* This ensures the label and display are the main flexible element */
+        flex-grow: 1;
+        text-align: center;
+        font-weight: bold;
+        margin: 0 10px; /* Space between label and buttons */
+    }
+
+    /* Overwrite the default display:block from .controls label */
+    .controls label {
+        display: initial;
+        width: auto;
+        margin: 0;
+        box-sizing: initial;
+    }
+    /* Set back to block for the range input */
+    .controls input[type="range"] {
+        display: block;
+    }
+
+
     /* --- RESPONSIVE ADJUSTMENTS: DARK THEME FOR MOBILE --- */
 @media (max-width: 480px) {
     
@@ -166,6 +217,16 @@
         border: 1px solid #555;
         padding: 5px;
     }
+
+    /* Dark theme adjustment for new buttons */
+    .tempo-btn {
+        background-color: #3a3a3a;
+        color: #e0e0e0;
+        border: 1px solid #555;
+    }
+    .tempo-btn:hover {
+        background-color: #4c4c4c;
+    }
 }
     
 </style>
@@ -176,7 +237,12 @@
         <h1> Metronome</h1>
         
         <div class="controls">
-            <label for="tempo">Tempo: <span id="tempoDisplay">100</span> BPM</label>
+            
+            <div class="tempo-control">
+                <button id="minusBtn" class="tempo-btn">-</button>
+                <label for="tempo" class="tempo-label">Tempo: <span id="tempoDisplay">100</span> BPM</label>
+                <button id="plusBtn" class="tempo-btn">+</button>
+            </div>
             <input type="range" id="tempo" min="40" max="300" value="100">
 
             <label for="beatsPerMeasure">Beats Per Measure (1-20): <span id="bpmDisplay">4</span></label>
@@ -224,6 +290,8 @@
         // --- Metronome State and Variables ---
         let isRunning = false;
         let tempo = 100;
+        const MIN_TEMPO = 40; // Added constant for min tempo
+        const MAX_TEMPO = 300; // Added constant for max tempo
         let beatsPerMeasure = 4;
         let currentBeat = 0;
         let timerWorker = null;
@@ -239,6 +307,8 @@
         // --- DOM Elements ---
         const tempoInput = document.getElementById('tempo');
         const tempoDisplay = document.getElementById('tempoDisplay');
+        const minusBtn = document.getElementById('minusBtn'); // New button element
+        const plusBtn = document.getElementById('plusBtn'); // New button element
         const bpmInput = document.getElementById('beatsPerMeasure');
         const bpmDisplay = document.getElementById('bpmDisplay');
         const volumeInput = document.getElementById('volume');
@@ -341,6 +411,25 @@
             volumeGainNode.gain.value = value;
         }
 
+        // --- NEW FUNCTIONS FOR BUTTONS ---
+        function updateTempo(newTempo) {
+            // Clamp the new tempo value
+            tempo = Math.max(MIN_TEMPO, Math.min(MAX_TEMPO, newTempo));
+
+            // Update both the display and the range input
+            tempoDisplay.textContent = tempo;
+            tempoInput.value = tempo;
+        }
+
+        function incrementTempo() {
+            updateTempo(tempo + 1);
+        }
+
+        function decrementTempo() {
+            updateTempo(tempo - 1);
+        }
+        // --- END NEW FUNCTIONS ---
+
         function startMetronome() {
             if (isRunning) return; 
             
@@ -398,11 +487,15 @@
 
         // --- Initial Setup and Listeners ---
         
-        // Tempo input listener
+        // Tempo input listener (for the range slider)
         tempoInput.addEventListener('input', (e) => {
             tempo = parseInt(e.target.value);
             tempoDisplay.textContent = tempo;
         });
+
+        // NEW: Tempo button listeners
+        minusBtn.addEventListener('click', decrementTempo);
+        plusBtn.addEventListener('click', incrementTempo);
 
         // Beats Per Measure input listener
         bpmInput.addEventListener('input', (e) => {
@@ -441,7 +534,7 @@
         updateVolume(volumeInput.value); // Set initial volume
         updateBeatIndicators(); // Draw initial beat circles
 
-  
+    
     </script>
 </body>
 </html>
