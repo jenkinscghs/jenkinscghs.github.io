@@ -34,16 +34,38 @@
 <body>
   <div id="feed">Loading…</div>
 <!---------FETCH SCRIPT---------------------------------------------->
-  <script>
+ <script>
   fetch("https://raw.githubusercontent.com/jenkinscghs/orchestra-updates/main/feed.json")
     .then(res => res.json())
     .then(data => {
+      // Sort newest → oldest
+      data.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+
+      const latestTs = data[0]?.ts;
+      const storedTs = localStorage.getItem("lastSeenTs");
+
+      // Play chime ONLY if there's a new post
+      if (storedTs && latestTs && latestTs !== storedTs) {
+        playChime();
+      }
+
+      // Store latest timestamp
+      if (latestTs) {
+        localStorage.setItem("lastSeenTs", latestTs);
+      }
+
+      // Render only last 10 posts
       document.getElementById("feed").innerHTML =
-        data.slice(0,10).map(item => `
+        data.slice(0, 10).map(item => `
           <div class="post">
             ${item.body}
             <div class="time">
-              ${new Date(item.ts).toLocaleString()}
+              ${new Date(item.ts).toLocaleDateString(undefined, {
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit"
+              })}
             </div>
           </div>
         `).join("");
@@ -54,6 +76,7 @@
         "Unable to load updates.";
     });
 </script>
+
 
   <!CHIME SCRIPT----------------------------------------------------->
 <script>
