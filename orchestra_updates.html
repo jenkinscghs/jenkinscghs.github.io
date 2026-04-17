@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Orchestra Updates</title>
+
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      padding: 1rem;
+    }
+
+    .post {
+      font-size: clamp(1.8rem, 4.5vw, 2.6rem);
+      border-bottom: 1px solid #ddd;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+    }
+
+    .time {
+      font-size: 1rem;
+      color: #666;
+      margin-top: 0.25rem;
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div id="feed">Loading…</div>
+
+  <script>
+    fetch('./feed.json')
+      .then(res => res.json())
+      .then(data => {
+        document.getElementById('feed').innerHTML =
+          data.map(item => `
+            <div class="post">
+              ${item.text}
+              <div class="time">${item.time}</div>
+              ${item.status ? `<div class="status">${item.status}</div>` : ''}
+            </div>
+          `).join('');
+      })
+      .catch(() => {
+        document.getElementById('feed').textContent =
+          'Unable to load updates.';
+      });
+  </script>
+</body>
+</html>
+``
