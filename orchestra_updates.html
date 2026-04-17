@@ -35,47 +35,59 @@
   <div id="feed">Loading…</div>
 <!---------FETCH SCRIPT---------------------------------------------->
  <script>
-  fetch("https://raw.githubusercontent.com/jenkinscghs/orchestra-updates/main/feed.json")
-    .then(res => res.json())
-    .then(data => {
-      // Sort newest → oldest
-      data.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+  const FEED_URL =
+    "https://raw.githubusercontent.com/jenkinscghs/orchestra-updates/main/feed.json";
 
-      const latestTs = data[0]?.ts;
-      const storedTs = localStorage.getItem("lastSeenTs");
+  let lastSeenTs = localStorage.getItem("lastSeenTs");
 
-      // Play chime ONLY if there's a new post
-      if (storedTs && latestTs && latestTs !== storedTs) {
-        playChime();
-      }
+  function fetchFeed() {
+    fetch(FEED_URL, { cache: "no-store" })
+      .then(res => res.json())
+      .then(data => {
+        if (!Array.isArray(data) || data.length === 0) return;
 
-      // Store latest timestamp
-      if (latestTs) {
-        localStorage.setItem("lastSeenTs", latestTs);
-      }
+        // Sort newest → oldest
+        data.sort((a, b) => new Date(b.ts) - new Date(a.ts));
 
-      // Render only last 10 posts
-      document.getElementById("feed").innerHTML =
-        data.slice(0, 10).map(item => `
-          <div class="post">
-            ${item.body}
-            <div class="time">
-              ${new Date(item.ts).toLocaleDateString(undefined, {
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit"
-              })}
-            </div>
+        const newestTs = data[0].ts;
+
+        // ✅ Detect new content
+        if (lastSeenTs && newestTs !== lastSeenTs) {
+          playChime();
+        }
+
+        lastSeenTs = newestTs;
+        localStorage.setItem("lastSeenTs", newestTs);
+
+        render(data.slice(0, 10));
+      })
+      .catch(err => console.warn("Feed fetch failed", err));
+  }
+
+  function render(posts) {
+    document.getElementById("feed").innerHTML =
+      posts.map(item => `
+        <div class="post">
+          ${item.body}
+          <div class="time">
+            ${new Date(item.ts).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "numeric",
+              minute: "2-digit"
+            })}
           </div>
-        `).join("");
-    })
-    .catch(err => {
-      console.error(err);
-      document.getElementById("feed").textContent =
-        "Unable to load updates.";
-    });
+        </div>
+      `).join("");
+  }
+
+  // Initial load
+  fetchFeed();
+
+  // ✅ Poll every 30 seconds (safe + fast enough)
+  setInterval(fetchFeed, 30000);
 </script>
+
 
 
   <!CHIME SCRIPT----------------------------------------------------->
