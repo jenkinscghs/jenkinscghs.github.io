@@ -33,7 +33,7 @@
 </head>
 <body>
   <div id="feed">Loading…</div>
-
+<!---------FETCH SCRIPT---------------------------------------------->
   <script>
   fetch("https://raw.githubusercontent.com/jenkinscghs/orchestra-updates/main/feed.json")
     .then(res => res.json())
@@ -54,6 +54,49 @@
         "Unable to load updates.";
     });
 </script>
+
+  <!CHIME SCRIPT----------------------------------------------------->
+<script>
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+  function playChime() {
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+
+    const osc1 = audioCtx.createOscillator();
+    const osc2 = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc1.type = "sine";
+    osc2.type = "triangle";
+
+    osc1.frequency.value = 880;   // bell tone
+    osc2.frequency.value = 1320;  // harmonic
+
+    gain.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 1);
+
+    osc1.connect(gain);
+    osc2.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc1.start();
+    osc2.start();
+    osc1.stop(audioCtx.currentTime + 1);
+    osc2.stop(audioCtx.currentTime + 1);
+  }
+
+  // Enable audio on first tap/click
+  document.addEventListener("click", () => {
+    if (audioCtx.state === "suspended") {
+      audioCtx.resume();
+    }
+  }, { once: true });
+</script>
+
+  
 </body>
 </html>
 ``
