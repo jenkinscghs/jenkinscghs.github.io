@@ -39,7 +39,7 @@
     .then(res => res.json())
     .then(data => {
       document.getElementById("feed").innerHTML =
-        data.map(item => `
+        data.slice(0,10).map(item => `
           <div class="post">
             ${item.body}
             <div class="time">
