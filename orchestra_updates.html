@@ -42,8 +42,8 @@
           data.map(item => `
             <div class="post">
               ${item.text}
-              <div class="time">${item.time}</div>
-              ${item.status ? `<div class="status">${item.status}</div>` : ''}
+              <div class="time">${item.ts}</div>
+              ${item.status ? `<div class="status">${item.body}</div>` : ''}
             </div>
           `).join('');
       })
