@@ -35,7 +35,7 @@
   <div id="feed">Loading…</div>
 
   <script>
-    fetch("https://raw.githubusercontent.com/jenkinscghs/orchestra-updates/feed.json")
+    fetch("https://github.com/jenkinscghs/orchestra-updates/blob/83ada99ef91b3162eeaf490c3dc0af1b76eeffbb/feed.json")
       .then(res => res.json())
       .then(data => {
         document.getElementById('feed').innerHTML =
