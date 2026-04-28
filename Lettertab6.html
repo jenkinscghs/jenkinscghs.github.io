@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Letter Tab Editor</title>
+
+<style>
+  body {
+    font-family: monospace;
+    background: #f5f5f5;
+    padding: 20px;
+  }
+
+  h1 {
+    margin-bottom: 6px;
+  }
+
+  .controls, .save-controls {
+    margin-bottom: 12px;
+  }
+
+  input, button {
+    font-family: monospace;
+    margin-right: 4px;
+  }
+
+  input[type="number"] {
+    width: 60px;
+  }
+
+  input[type="text"] {
+    width: 160px;
+  }
+
+  .tab {
+    background: white;
+    padding: 12px;
+    border: 1px solid #ccc;
+    width: fit-content;
+    margin-bottom: 16px;
+  }
+
+  .string-row {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    position: relative;
+  }
+
+  .string-label {
+    width: 24px;
+    text-align: right;
+    margin-right: 6px;
+    user-select: none;
+  }
+
+  .string-row::before {
+    content: "";
+    position: absolute;
+    left: 32px;
+    right: 0;
+    top: 50%;
+    border-bottom: 1px solid #bbb;
+    z-index: 0;
+  }
+
+  .cell {
+    width: 28px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    margin-right: 2px;
+    position: relative;
+    z-index: 1;
+    background: white;
+    cursor: pointer;
+  }
+
+  .cell:focus {
+    outline: 1px solid #0078d4;
+  }
+
+  .preview {
+    width: 100%;
+    max-width: 800px;
+    height: 160px;
+    white-space: pre;
+    resize: vertical;
+    font-family: monospace;
+  }
+</style>
+</head>
+
+<body>
+
+<h1>Letter Tab Editor</h1>
+<p>
+Type letters. ↑ = sharp, ↓ = flat.<br>
+<strong>Shift + ↑ / ↓</strong> moves between strings.
+</p>
+
+<div class="controls">
+  Tab length:
+  <input type="number" id="length" min="1" value="16">
+  <button id="applyLength">Apply</button>
+  <button id="copyText">Copy as Text</button>
+</div>
+
+<div class="save-controls">
+  <input type="text" id="saveName" placeholder="Tab name">
+  <button id="saveTab">Save</button>
+  <button id="loadTab">Load</button>
+  <button id="exportJson">Export JSON</button>
+  <input type="file" id="importJson" hidden accept=".json">
+  <button id="importBtn">Import JSON</button>
+</div>
+
+<div class="tab" id="editor"></div>
+
+<h2>Text Preview</h2>
+<textarea class="preview" id="preview" readonly></textarea>
+
+<script>
+const strings = ["e|", "B|", "G|", "D|", "A|", "E|"];
+let columns = 16;
+let grid = strings.map(() => Array(columns).fill(""));
+
+const editor = document.getElementById("editor");
+const preview = document.getElementById("preview");
+
+/* ===== Build Editor ===== */
+function buildEditor() {
+  editor.innerHTML = "";
+
+  strings.forEach((label, rowIndex) => {
+    const row = document.createElement("div");
+    row.className = "string-row";
+
+    const lbl = document.createElement("div");
+    lbl.className = "string-label";
+    lbl.textContent = label;
+    row.appendChild(lbl);
+
+    for (let col = 0; col < columns; col++) {
+      const cell = document.createElement("div");
+      cell.className = "cell";
+      cell.tabIndex = 0;
+      cell.textContent = grid[rowIndex][col];
+
+      cell.addEventListener("keydown", e => {
+        let value = grid[rowIndex][col];
+
+        /* ===== Navigation FIRST ===== */
+        if (e.shiftKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+          const targetRow =
+            e.key === "ArrowUp" ? rowIndex - 1 : rowIndex + 1;
+
+          if (targetRow >= 0 && targetRow < strings.length) {
+            const targetCell =
+              editor.children[targetRow].querySelectorAll(".cell")[col];
+            targetCell.focus();
+          }
+          e.preventDefault();
+          return;
+        }
+
+        /* ===== Note Entry ===== */
+        if (/^[A-Za-z]$/.test(e.key)) {
+          value = e.key.toUpperCase();
+        } else if (e.key === "ArrowUp" && value) {
+          value = value[0] + "♯";
+        } else if (e.key === "ArrowDown" && value) {
+          value = value[0] + "♭";
+        } else if (["Backspace", "Delete", " "].includes(e.key)) {
+          value = "";
+        } else {
+          return;
+        }
+
+        grid[rowIndex][col] = value;
+        cell.textContent = value;
+        updatePreview();
+        e.preventDefault();
+      });
+
+      row.appendChild(cell);
+    }
+    editor.appendChild(row);
+  });
+}
+
+/* ===== Resize Grid ===== */
+function setLength(n) {
+  grid = strings.map((_, r) =>
+    Array.from({ length: n }, (_, i) => grid[r][i] || "")
+  );
+  columns = n;
+  buildEditor();
+  updatePreview();
+}
+
+/* ===== Text Preview ===== */
+function generateTextTab() {
+  return strings.map((label, r) =>
+    label + grid[r].map(c => c || "-").join("-")
+  ).join("\n");
+}
+
+function updatePreview() {
+  preview.value = generateTextTab();
+}
+
+/* ===== Save / Load ===== */
+function saveTab() {
+  const name = document.getElementById("saveName").value.trim();
+  if (!name) return alert("Enter a tab name");
+  localStorage.setItem(
+    "letterTab:" + name,
+    JSON.stringify({ columns, grid })
+  );
+  alert("Saved");
+}
+
+function loadTab() {
+  const name = document.getElementById("saveName").value.trim();
+  const data = localStorage.getItem("letterTab:" + name);
+  if (!data) return alert("No saved tab found");
+  const parsed = JSON.parse(data);
+  columns = parsed.columns;
+  grid = parsed.grid;
+  document.getElementById("length").value = columns;
+  buildEditor();
+  updatePreview();
+}
+
+/* ===== Export / Import ===== */
+function exportJson() {
+  const blob = new Blob(
+    [JSON.stringify({ columns, grid }, null, 2)],
+    { type: "application/json" }
+  );
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "letter-tab.json";
+  a.click();
+}
+
+function importJson(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = JSON.parse(e.target.result);
+    columns = data.columns;
+    grid = data.grid;
+    document.getElementById("length").value = columns;
+    buildEditor();
+    updatePreview();
+  };
+  reader.readAsText(file);
+}
+
+/* ===== UI Hooks ===== */
+document.getElementById("applyLength").onclick =
+  () => setLength(+document.getElementById("length").value);
+
+document.getElementById("copyText").onclick =
+  () => navigator.clipboard.writeText(generateTextTab());
+
+document.getElementById("saveTab").onclick = saveTab;
+document.getElementById("loadTab").onclick = loadTab;
+
+document.getElementById("exportJson").onclick = exportJson;
+document.getElementById("importBtn").onclick =
+  () => document.getElementById("importJson").click();
+document.getElementById("importJson").onchange =
+  e => importJson(e.target.files[0]);
+
+buildEditor();
+updatePreview();
+</script>
+
+</body>
+</html>
